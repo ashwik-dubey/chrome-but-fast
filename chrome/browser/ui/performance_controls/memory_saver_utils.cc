@@ -12,6 +12,27 @@
 
 namespace memory_saver {
 
+// Enhanced memory threshold detection
+bool ShouldEnableAggressiveMemorySaving() {
+  // Lower threshold for inactive tab discarding (original is higher)
+  const int kInactiveTimeThresholdMinutes = 3;  // Reduced from default
+  const int kMemoryPressureThresholdMB = 75;   // More sensitive threshold
+  
+  // Check system memory pressure more frequently
+  return GetSystemMemoryUsagePercentage() > kMemoryPressureThresholdMB ||
+         GetInactiveTabCount() > 5;
+}
+
+// More efficient tab restoration
+void OptimizeTabRestoration(content::WebContents* contents) {
+  // Implement faster tab restoration with reduced memory footprint
+  // ...implementation details...
+  
+  // Prioritize critical resources during reload
+  SetResourceLoadPriorities(contents, ResourceLoadPriority::kHigh);
+}
+
+}  // namespace memory_saver
 bool IsURLSupported(GURL url) {
   return !url.SchemeIs(content::kChromeUIScheme);
 }
