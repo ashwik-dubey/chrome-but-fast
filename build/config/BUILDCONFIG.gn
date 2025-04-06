@@ -733,6 +733,9 @@ foreach(_target_type,
 # The invoker can override the type of the target in the non-component-build
 # case by setting static_component_type to either "source_set" or
 # "static_library". If unset, the default will be used.
+
+import("//build/config/custom_memory_flags.gni")
+
 template("component") {
   if (is_component_build) {
     _component_mode = "shared_library"
