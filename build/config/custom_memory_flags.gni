@@ -1,0 +1,9 @@
+# Custom memory optimization flags for GN build
+
+declare_args() {
+  # When true, enables more aggressive tab discarding strategies
+  enable_aggressive_tab_discard = false
+  
+  # When true, enables experimental renderer optimizations for memory consumption
+  experimental_fast_renderer = false
+}
