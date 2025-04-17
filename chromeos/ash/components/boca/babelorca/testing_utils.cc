@@ -32,4 +32,5 @@ void RegisterPrefsForTesting(TestingPrefServiceSimple* pref_service) {
       kTranslationTargetLocale);
 }
 
+
 }  // namespace ash::babelorca

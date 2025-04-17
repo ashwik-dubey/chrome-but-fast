@@ -221,8 +221,7 @@ ContentVerifier* TestExtensionSystem::content_verifier() {
 
 std::unique_ptr<ExtensionSet> TestExtensionSystem::GetDependentExtensions(
     const Extension* extension) {
-  return extension_service()->shared_module_service()->GetDependentExtensions(
-      extension);
+  return SharedModuleService::Get(profile_)->GetDependentExtensions(extension);
 }
 
 void TestExtensionSystem::InstallUpdate(
@@ -237,12 +236,6 @@ void TestExtensionSystem::InstallUpdate(
 void TestExtensionSystem::PerformActionBasedOnOmahaAttributes(
     const std::string& extension_id,
     const base::Value::Dict& attributes) {}
-
-bool TestExtensionSystem::FinishDelayedInstallationIfReady(
-    const std::string& extension_id,
-    bool install_immediately) {
-  NOTREACHED();
-}
 
 value_store::TestingValueStore* TestExtensionSystem::value_store() {
   // These tests use TestingValueStore in a way that ensures it only ever mints

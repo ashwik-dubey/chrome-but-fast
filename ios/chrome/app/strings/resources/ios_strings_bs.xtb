@@ -481,6 +481,7 @@ Vaš pretraživač je <ph name="DSE_NAME" />. Ako je primjenjivo, pogledajte upu
 <translation id="2952278131021475699">Pretraživanje kamerom u Objektivu</translation>
 <translation id="2962516096219646456">Pregled svih podataka za automatsko popunjavanje</translation>
 <translation id="2969979262385602596">Prijava nije uspjela. Pokušajte ponovo kasnije.</translation>
+<translation id="297667759942911166">Sarađujte u grupama kartica</translation>
 <translation id="2989523299700148168">Nedavno posjećeno</translation>
 <translation id="2989805286512600854">Otvori u novoj kartici</translation>
 <translation id="2996291259634659425">Kreirajte pristupni izraz</translation>
@@ -526,7 +527,7 @@ Ako je primjenjivo, pogledajte uputstva pretraživača da saznate kako izbrisati
 <translation id="3167868116600277716">Sažetak sadržaja na Discoveru</translation>
 <translation id="3169472444629675720">Otkrijte</translation>
 <translation id="3174662312949010067">Također možete koristiti sačuvane lozinke na drugim uređajima.</translation>
-<translation id="3177338796769255211">Prijavite se kako biste imali pristup svojim oznakama i ostalom na svim svojim uređajima</translation>
+<translation id="3177338796769255211">Prijavite se da pristupite svojim oznakama i drugom na svim uređajima</translation>
 <translation id="3181954750937456830">Sigurno pregledanje (štiti vas i vaš uređaj od opasnih web lokacija)</translation>
 <translation id="3190736958609431397">Prestani pratiti</translation>
 <translation id="3208260410153224535">Vaša organizacija je isključila prijavu. Nove oznake, lozinke i još mnogo toga će se pohranjivati samo na ovom uređaju.</translation>
@@ -1127,6 +1128,7 @@ Također, Handoff mora biti omogućen u odjeljku Opće u Postavkama, a vaši ure
 <translation id="573974402615125334">Da dijelite grupe kartica, pridružujete im se i sarađujete u njima, sinhronizirajte historiju i kartice</translation>
 <translation id="5740123193752401435">Pretraživanje kartica…</translation>
 <translation id="5744274077973758795">Obavještenja funkcije <ph name="FEATURE_NAME" /> su uključena</translation>
+<translation id="5745598824054949526">Nije pronađen nijedan tekst</translation>
 <translation id="574762237186762643">Događaji</translation>
 <translation id="5749158352074143502">Nastavi s ovom karticom</translation>
 <translation id="5753021559215751319">Sačuvaj lozinku</translation>
@@ -1290,6 +1292,7 @@ Također, Handoff mora biti omogućen u odjeljku Opće u Postavkama, a vaši ure
 <translation id="6410883413783534063">Otvorite kartice da istovremeno posjetite različite stranice</translation>
 <translation id="6416807286621280684">Novosti o praćenim paketima i isporukama.</translation>
 <translation id="6418346271604475326">Pripremanje PDF-a</translation>
+<translation id="6421038304268477484">Prevedeni tekst</translation>
 <translation id="6429213933892582367">Otvorite Opcije lozinke</translation>
 <translation id="6434591244308415567">Došlo je do greške. Pokušajte ponovo kasnije.</translation>
 <translation id="6435307030888827407">Nastavi bez prijave</translation>
@@ -1857,6 +1860,7 @@ Web lokacije mogu koristiti kolačiće da vide vašu aktivnost pregledanja na ra
 <translation id="8697136149718343437">Premjesti traku za adresu na dno</translation>
 <translation id="8703372953981978786">Link ne funkcionira</translation>
 <translation id="8706253136355675497">Temperatura</translation>
+<translation id="8706806585855470492">Moći ćete dijeliti grupe kartica, pridruživati im se i sarađivati u njima</translation>
 <translation id="8709409604518538305">Kartice su zatvorene</translation>
 <translation id="8712534545803964353">Pronalaženje na stranici…</translation>
 <translation id="8712637175834984815">Razumijem</translation>
@@ -1968,6 +1972,7 @@ Web lokacije mogu koristiti kolačiće da vide vašu aktivnost pregledanja na ra
 <translation id="9097506547406246598">Nije moguće prestati pratiti. Nešto nije uredu.</translation>
 <translation id="9098541895599151034">Izbrisati <ph name="NUMBER_OF_ACCOUNTS" /> lozinku/e/i?</translation>
 <translation id="9099233023029360602">Svaki put pitaj koji račun koristiti</translation>
+<translation id="9099821309562615674">Pobrinite se da je tekst koji prevodite jasan i unutar okvira.</translation>
 <translation id="9100610230175265781">Potreban je pristupni izraz</translation>
 <translation id="91023216973987714">Načini plaćanja</translation>
 <translation id="9106655997975673326">S uređaja "<ph name="SOURCE_DEVICE" />"</translation>

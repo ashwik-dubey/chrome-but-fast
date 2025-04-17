@@ -31,6 +31,7 @@ import java.util.function.Function;
 public class WebPageStation extends PageStation {
     protected Supplier<WebContents> mWebContentsSupplier;
     private boolean mIgnoreUrlBar;
+    private ViewElement mUrlBar;
 
     protected <T extends WebPageStation> WebPageStation(Builder<T> builder) {
         super(builder);
@@ -68,14 +69,14 @@ public class WebPageStation extends PageStation {
         super.declareElements(elements);
 
         mWebContentsSupplier =
-                elements.declareEnterCondition(
+                elements.declareEnterConditionAsElement(
                         new WebContentsPresentCondition(mPageLoadedSupplier));
         elements.declareEnterCondition(new FrameInfoUpdatedCondition(mWebContentsSupplier));
 
         if (!mIgnoreUrlBar) {
             // TODO(crbug.com/41497463): This should be shared, not unscoped, but the toolbar exists
             // in the tab switcher and it is not completely occluded.
-            elements.declareView(URL_BAR, ViewElement.unscopedOption());
+            mUrlBar = elements.declareView(URL_BAR, ViewElement.unscopedOption());
         }
 
         // Make sure that the new tab page is not considered a WebPageStation
@@ -116,19 +117,19 @@ public class WebPageStation extends PageStation {
     /** Opens the web page app menu by pressing the toolbar "..." button */
     public RegularWebPageAppMenuFacility openRegularTabAppMenu() {
         assert !mIncognito;
-        return enterFacilitySync(new RegularWebPageAppMenuFacility(), MENU_BUTTON::click);
+        return enterFacilitySync(new RegularWebPageAppMenuFacility(), mMenuButton.clickTrigger());
     }
 
     /** Opens the web page app menu by pressing the toolbar "..." button */
     public IncognitoWebPageAppMenuFacility openIncognitoTabAppMenu() {
         assert mIncognito;
-        return enterFacilitySync(new IncognitoWebPageAppMenuFacility(), MENU_BUTTON::click);
+        return enterFacilitySync(new IncognitoWebPageAppMenuFacility(), mMenuButton.clickTrigger());
     }
 
     /** Trigger to scroll WebContents to the bottom. */
     public Transition.Trigger scrollToBottomTrigger() {
         return () -> {
-            assertSuppliersCanBeUsed();
+            assertInPhase(Phase.ACTIVE);
             try {
                 JavaScriptUtils.executeJavaScriptAndWaitForResult(
                         mWebContentsSupplier.get(),
@@ -145,7 +146,7 @@ public class WebPageStation extends PageStation {
         OmniboxFacility omniboxFacility =
                 new OmniboxFacility(/* incognito= */ mIncognito, fakeSuggestions);
         SoftKeyboardFacility softKeyboard = new SoftKeyboardFacility();
-        enterFacilitiesSync(List.of(omniboxFacility, softKeyboard), URL_BAR::click);
+        enterFacilitiesSync(List.of(omniboxFacility, softKeyboard), mUrlBar.clickTrigger());
         return Pair.create(omniboxFacility, softKeyboard);
     }
 
@@ -171,6 +172,9 @@ public class WebPageStation extends PageStation {
         public WebContents get() {
             // Do not return a WebContents that has been destroyed, so always get it from the
             // Tab instead of letting ConditionWithResult return its |mResult|.
+            if (!mLoadedTabSupplier.hasValue()) {
+                return null;
+            }
             Tab loadedTab = mLoadedTabSupplier.get();
             if (loadedTab == null) {
                 return null;

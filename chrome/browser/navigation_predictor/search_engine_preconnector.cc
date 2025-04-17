@@ -34,6 +34,9 @@ const int kDefaultStartupDelayMs = 5000;
 const bool kDefaultSkipInBackground = true;
 #endif
 
+constexpr int kPreconnectIntervalSec = 60;
+constexpr int kPreconnectRetryDelayMs = 50;
+
 }  // namespace
 
 namespace features {
@@ -45,9 +48,6 @@ BASE_FEATURE(kPreconnectFromKeyedService,
 BASE_FEATURE(kPreconnectToSearch,
              "PreconnectToSearch",
              base::FEATURE_ENABLED_BY_DEFAULT);
-BASE_FEATURE(kPreconnectToSearchWithPrivacyModeEnabled,
-             "PreconnectToSearchWithPrivacyModeEnabled",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 }  // namespace features
 
 WebContentVisibilityManager::WebContentVisibilityManager()
@@ -103,6 +103,12 @@ bool SearchEnginePreconnector::ShouldBeEnabledForOffTheRecord() {
   return enabled_for_otr;
 }
 
+bool SearchEnginePreconnector::SearchEnginePreconnect2Enabled() {
+  static bool preconnect2_enabled =
+      base::FeatureList::IsEnabled(net::features::kSearchEnginePreconnect2);
+  return preconnect2_enabled;
+}
+
 SearchEnginePreconnector::SearchEnginePreconnector(
     content::BrowserContext* browser_context)
     : browser_context_(browser_context) {
@@ -113,18 +119,18 @@ SearchEnginePreconnector::SearchEnginePreconnector(
 SearchEnginePreconnector::~SearchEnginePreconnector() = default;
 
 void SearchEnginePreconnector::StopPreconnecting() {
+  preconnector_started_ = false;
   timer_.Stop();
 }
 
 void SearchEnginePreconnector::StartPreconnecting(bool with_startup_delay) {
+  preconnector_started_ = true;
   timer_.Stop();
   if (with_startup_delay) {
-    timer_.Start(FROM_HERE,
-                 base::Milliseconds(base::GetFieldTrialParamByFeatureAsInt(
-                     features::kPreconnectToSearch, "startup_delay_ms",
-                     kDefaultStartupDelayMs)),
-                 base::BindOnce(&SearchEnginePreconnector::PreconnectDSE,
-                                base::Unretained(this)));
+    StartPreconnectWithDelay(
+        base::Milliseconds(base::GetFieldTrialParamByFeatureAsInt(
+            features::kPreconnectToSearch, "startup_delay_ms",
+            kDefaultStartupDelayMs)));
     return;
   }
 
@@ -177,27 +183,13 @@ void SearchEnginePreconnector::PreconnectDSE() {
         preconnect_url, /*allow_credentials=*/true, network_anonymziation_key,
         predictors::kSearchEnginePreconnectTrafficAnnotation,
         /*storage_partition_config=*/nullptr);
-
-    if (base::FeatureList::IsEnabled(
-            features::kPreconnectToSearchWithPrivacyModeEnabled)) {
-      GetPreconnectManager().StartPreconnectUrl(
-          preconnect_url,
-          /*allow_credentials=*/false, network_anonymziation_key,
-          predictors::kSearchEnginePreconnectTrafficAnnotation,
-          /*storage_partition_config=*/nullptr);
-    }
   }
 
-  // The delay beyond the idle socket timeout that net uses when
-  // re-preconnecting. If negative, no retries occur.
-  const base::TimeDelta retry_delay = base::Milliseconds(50);
-
-  // Set/Reset the timer to fire after the preconnect times out. Add an extra
-  // delay to make sure the preconnect has expired if it wasn't used.
-  timer_.Start(FROM_HERE,
-               base::Seconds(GetPreconnectIntervalSec()) + retry_delay,
-               base::BindOnce(&SearchEnginePreconnector::PreconnectDSE,
-                              base::Unretained(this)));
+  // Periodically preconnect to the DSE. If the browser app is likely in
+  // background, we will reattempt preconnect later.
+  if (!SearchEnginePreconnect2Enabled()) {
+    StartPreconnectWithDelay(GetPreconnectInterval());
+  }
 }
 
 GURL SearchEnginePreconnector::GetDefaultSearchEngineOriginURL() const {
@@ -211,12 +203,27 @@ GURL SearchEnginePreconnector::GetDefaultSearchEngineOriginURL() const {
   return search_provider->GenerateSearchURL({}).DeprecatedGetOriginAsURL();
 }
 
-int SearchEnginePreconnector::GetPreconnectIntervalSec() const {
-  constexpr int kPreconnectIntervalSec = 60;
-  int preconnect_interval = base::GetFieldTrialParamByFeatureAsInt(
-      net::features::kSearchEnginePreconnectInterval, "preconnect_interval",
-      kPreconnectIntervalSec);
-  return preconnect_interval;
+base::TimeDelta SearchEnginePreconnector::GetPreconnectInterval() const {
+  if (!SearchEnginePreconnect2Enabled()) {
+    int preconnect_interval = base::GetFieldTrialParamByFeatureAsInt(
+        net::features::kSearchEnginePreconnectInterval, "preconnect_interval",
+        kPreconnectIntervalSec);
+
+    // Add an extra delay to make sure the preconnect has expired if it wasn't
+    // used.
+    return base::Seconds(preconnect_interval) +
+           base::Milliseconds(kPreconnectRetryDelayMs);
+  }
+
+  // TODO(crbug.com/406022435): Update the logic to use exponential backoff.
+  return base::Seconds(net::features::kMaxPreconnectRetryInterval.Get());
+}
+
+void SearchEnginePreconnector::StartPreconnectWithDelay(base::TimeDelta delay) {
+  //  Set/Reset the timer to fire after the specified `delay`.
+  timer_.Start(FROM_HERE, delay,
+               base::BindOnce(&SearchEnginePreconnector::PreconnectDSE,
+                              base::Unretained(this)));
 }
 
 predictors::PreconnectManager&
@@ -227,4 +234,29 @@ SearchEnginePreconnector::GetPreconnectManager() {
   }
 
   return *preconnect_manager_.get();
+}
+
+void SearchEnginePreconnector::OnWebContentsVisibilityChanged(
+    content::WebContents* web_contents,
+    bool is_in_foreground) {
+  WebContentVisibilityManager::OnWebContentsVisibilityChanged(web_contents,
+                                                              is_in_foreground);
+
+  if (!SearchEnginePreconnect2Enabled()) {
+    return;
+  }
+
+  // Early stop when we know that the visibility change did not trigger
+  // foregrounding of the app and also when the preconnector is not started.
+  if (!IsBrowserAppLikelyInForeground() || !preconnector_started_) {
+    return;
+  }
+
+  // Stop the timer explicitly here so that we do not have any duplicate
+  // attempts.
+  timer_.Stop();
+
+  // Attempt reconnect again in case the visibility has changed after the last
+  // preconnect attempt so that we will preconnect sooner.
+  PreconnectDSE();
 }

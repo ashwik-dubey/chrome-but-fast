@@ -8094,7 +8094,7 @@ TEST_F(AXPlatformNodeWinTest, DormantDestroyed) {
   ASSERT_EQ(AXPlatformNodeWin::GetCountsForTesting(),
             std::tuple(0U, 0U, 0U, 0U));
 
-  AXPlatformNode::Pointer node = AXPlatformNode::Create(&test_delegate);
+  AXPlatformNode::Pointer node = AXPlatformNode::Create(test_delegate);
 
   // One instance and one dormant node.
   ASSERT_EQ(AXPlatformNodeWin::GetCountsForTesting(),
@@ -8115,7 +8115,7 @@ TEST_F(AXPlatformNodeWinTest, DormantLiveDormantDestroyed) {
   ASSERT_EQ(AXPlatformNodeWin::GetCountsForTesting(),
             std::tuple(0U, 0U, 0U, 0U));
 
-  AXPlatformNode::Pointer node = AXPlatformNode::Create(&test_delegate);
+  AXPlatformNode::Pointer node = AXPlatformNode::Create(test_delegate);
 
   // One instance and one dormant node.
   ASSERT_EQ(AXPlatformNodeWin::GetCountsForTesting(),
@@ -8151,7 +8151,7 @@ TEST_F(AXPlatformNodeWinTest, DormantLiveGhostDestroyed) {
   ASSERT_EQ(AXPlatformNodeWin::GetCountsForTesting(),
             std::tuple(0U, 0U, 0U, 0U));
 
-  AXPlatformNode::Pointer node = AXPlatformNode::Create(&test_delegate);
+  AXPlatformNode::Pointer node = AXPlatformNode::Create(test_delegate);
 
   // One instance and one dormant node.
   ASSERT_EQ(AXPlatformNodeWin::GetCountsForTesting(),

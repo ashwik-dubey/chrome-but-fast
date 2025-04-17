@@ -13,22 +13,38 @@
 
 namespace {
 const CGFloat kTrackButtonTopPadding = 4;
+const CGFloat kTrackButtonTopBottomPaddingLightVariant = 3;
+const CGFloat kTrackButtonSidePaddingLightVariant = 14;
+const CGFloat kTrackButtonCornerRadiusLightVariant = 76;
+const CGFloat kTrackButtonLightVariantAlpha = 0.11f;
 }  // namespace
 
 @implementation PriceNotificationsTrackButton
 
-- (instancetype)init {
-  self = [super init];
+- (instancetype)initWithLightVariant:(BOOL)useLightVariant {
+  self = [super initWithFrame:CGRectZero];
   if (self) {
+    _useLightVariant = useLightVariant;
     size_t horizontalPadding = [self horizontalPadding];
     UIButtonConfiguration* buttonConfiguration =
         [UIButtonConfiguration plainButtonConfiguration];
-    buttonConfiguration.contentInsets =
-        NSDirectionalEdgeInsetsMake(kTrackButtonTopPadding, horizontalPadding,
-                                    kTrackButtonTopPadding, horizontalPadding);
+    if (_useLightVariant) {
+      buttonConfiguration.contentInsets =
+          NSDirectionalEdgeInsetsMake(kTrackButtonTopBottomPaddingLightVariant,
+                                      kTrackButtonSidePaddingLightVariant,
+                                      kTrackButtonTopBottomPaddingLightVariant,
+                                      kTrackButtonSidePaddingLightVariant);
+
+    } else {
+      buttonConfiguration.contentInsets = NSDirectionalEdgeInsetsMake(
+          kTrackButtonTopPadding, horizontalPadding, kTrackButtonTopPadding,
+          horizontalPadding);
+    }
 
     // Customize title string.
-    UIFont* font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    UIFont* font = [UIFont
+        preferredFontForTextStyle:_useLightVariant ? UIFontTextStyleSubheadline
+                                                   : UIFontTextStyleHeadline];
     NSDictionary* attributes = @{NSFontAttributeName : font};
     NSMutableAttributedString* string = [[NSMutableAttributedString alloc]
         initWithString:
@@ -37,10 +53,18 @@ const CGFloat kTrackButtonTopPadding = 4;
     [string addAttributes:attributes range:NSMakeRange(0, string.length)];
     buttonConfiguration.attributedTitle = string;
 
-    buttonConfiguration.baseForegroundColor =
-        [UIColor colorNamed:kSolidWhiteColor];
-    buttonConfiguration.background.backgroundColor =
-        [UIColor colorNamed:kBlueColor];
+    buttonConfiguration.baseForegroundColor = [UIColor
+        colorNamed:(_useLightVariant) ? kBlue600Color : kSolidWhiteColor];
+
+    if (_useLightVariant) {
+      buttonConfiguration.background.backgroundColor =
+          [[UIColor colorNamed:kBlue600Color]
+              colorWithAlphaComponent:kTrackButtonLightVariantAlpha];
+    } else {
+      buttonConfiguration.background.backgroundColor =
+          [UIColor colorNamed:kBlueColor];
+    }
+
     buttonConfiguration.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
     buttonConfiguration.titleLineBreakMode = NSLineBreakByTruncatingTail;
     self.configuration = buttonConfiguration;
@@ -52,19 +76,39 @@ const CGFloat kTrackButtonTopPadding = 4;
 
 - (void)layoutSubviews {
   [super layoutSubviews];
-  self.layer.cornerRadius = self.frame.size.height / 2;
+  if (_useLightVariant) {
+    self.layer.cornerRadius = kTrackButtonCornerRadiusLightVariant;
+  } else {
+    self.layer.cornerRadius = self.frame.size.height / 2;
+  }
   size_t horizontalPadding = [self horizontalPadding];
 
   price_notifications::WidthConstraintValues constraintValues =
       price_notifications::CalculateTrackButtonWidthConstraints(
           self.superview.superview.frame.size.width,
-          self.titleLabel.intrinsicContentSize.width, horizontalPadding);
-  [NSLayoutConstraint activateConstraints:@[
-    [self.widthAnchor
-        constraintLessThanOrEqualToConstant:constraintValues.max_width],
-    [self.widthAnchor
-        constraintGreaterThanOrEqualToConstant:constraintValues.target_width]
-  ]];
+          self.titleLabel.intrinsicContentSize.width,
+          (_useLightVariant) ? kTrackButtonSidePaddingLightVariant
+                             : horizontalPadding);
+
+  if (_useLightVariant) {
+    // This is necessary to ensure the button does not get shorter
+    // than the text, even with larger accessibility text.
+    [NSLayoutConstraint activateConstraints:@[
+      [self.leadingAnchor
+          constraintEqualToAnchor:self.titleLabel.leadingAnchor
+                         constant:kTrackButtonSidePaddingLightVariant],
+      [self.trailingAnchor
+          constraintEqualToAnchor:self.titleLabel.trailingAnchor
+                         constant:kTrackButtonSidePaddingLightVariant],
+    ]];
+  } else {
+    [NSLayoutConstraint activateConstraints:@[
+      [self.widthAnchor
+          constraintLessThanOrEqualToConstant:constraintValues.max_width],
+      [self.widthAnchor
+          constraintGreaterThanOrEqualToConstant:constraintValues.target_width]
+    ]];
+  }
 }
 
 #pragma mark - Private

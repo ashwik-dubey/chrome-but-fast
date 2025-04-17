@@ -11,12 +11,22 @@
 #include "chrome/browser/contextual_cueing/contextual_cueing_features.h"
 #include "chrome/browser/contextual_cueing/contextual_cueing_page_data.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
+#include "chrome/browser/predictors/loading_predictor.h"
 #include "chrome/browser/ui/tabs/glic_nudge_controller.h"
+#include "chrome/common/buildflags.h"
+#include "components/optimization_guide/core/optimization_guide_switches.h"
+#include "components/optimization_guide/proto/hints.pb.h"
+#include "components/prefs/pref_service.h"
 #include "content/public/browser/web_contents.h"
+#include "net/base/network_anonymization_key.h"
 #include "services/metrics/public/cpp/metrics_utils.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "url/gurl.h"
+
+#if BUILDFLAG(ENABLE_GLIC)
+#include "chrome/browser/glic/glic_pref_names.h"
+#endif
 
 namespace {
 
@@ -40,6 +50,12 @@ void LogNudgeInteractionUKM(ukm::SourceId source_id,
       .Record(ukm_recorder->Get());
 }
 
+#if BUILDFLAG(ENABLE_GLIC)
+bool IsGlicTabContextEnabled(PrefService* pref_service) {
+  return pref_service->GetBoolean(glic::prefs::kGlicTabContextEnabled);
+}
+#endif
+
 }  // namespace
 
 namespace contextual_cueing {
@@ -47,22 +63,33 @@ namespace contextual_cueing {
 ContextualCueingService::ContextualCueingService(
     page_content_annotations::PageContentExtractionService*
         page_content_extraction_service,
-    OptimizationGuideKeyedService* optimization_guide_keyed_service)
+    OptimizationGuideKeyedService* optimization_guide_keyed_service,
+    predictors::LoadingPredictor* loading_predictor,
+    PrefService* pref_service)
     : recent_nudge_tracker_(kNudgeCapCount.Get(), kNudgeCapTime.Get()),
       recent_visited_origins_(kVisitedDomainsLimit.Get()),
       page_content_extraction_service_(page_content_extraction_service),
-      optimization_guide_keyed_service_(optimization_guide_keyed_service) {
+      optimization_guide_keyed_service_(optimization_guide_keyed_service),
+      loading_predictor_(loading_predictor),
+      pref_service_(pref_service),
+      mes_url_(optimization_guide::switches::GetModelExecutionServiceURL()) {
   CHECK(base::FeatureList::IsEnabled(contextual_cueing::kContextualCueing) ||
         base::FeatureList::IsEnabled(
             contextual_cueing::kGlicZeroStateSuggestions));
+  if (optimization_guide_keyed_service_ &&
+      base::FeatureList::IsEnabled(
+          contextual_cueing::kGlicZeroStateSuggestions)) {
+    optimization_guide_keyed_service_->RegisterOptimizationTypes(
+        {optimization_guide::proto::GLIC_ZERO_STATE_SUGGESTIONS});
+  }
 
-  if (kEnablePageContentExtraction.Get()) {
+  if (kEnablePageContentExtraction.Get() && page_content_extraction_service_) {
     page_content_extraction_service_->AddObserver(this);
   }
 }
 
 ContextualCueingService::~ContextualCueingService() {
-  if (kEnablePageContentExtraction.Get()) {
+  if (kEnablePageContentExtraction.Get() && page_content_extraction_service_) {
     page_content_extraction_service_->RemoveObserver(this);
   }
 }
@@ -92,7 +119,6 @@ void ContextualCueingService::CueingNudgeShown(const GURL& url) {
 }
 
 void ContextualCueingService::CueingNudgeDismissed() {
-
   base::TimeDelta backoff_duration =
       kBackoffTime.Get() * pow(kBackoffMultiplierBase.Get(), dismiss_count_);
 
@@ -170,28 +196,57 @@ void ContextualCueingService::OnNudgeActivity(
         web_contents->GetPrimaryMainFrame()->GetPageUkmSourceId(), interaction,
         document_available_time, *nudge_time);
   }
+}
 
-  // Temporary trigger for suggestions request, to be removed when UI is ready.
-  if (activity == tabs::GlicNudgeActivity::kNudgeClicked &&
-      base::FeatureList::IsEnabled(kGlicZeroStateSuggestions)) {
-    ZeroStateSuggestionsPageData::CreateForPage(
-        web_contents->GetPrimaryPage(), web_contents,
-        optimization_guide_keyed_service_, /*is_fre=*/false, base::DoNothing());
+void ContextualCueingService::PrepareToFetchContextualGlicZeroStateSuggestions(
+    content::WebContents* web_contents) {
+  if (!base::FeatureList::IsEnabled(kGlicZeroStateSuggestions)) {
+    return;
   }
+
+#if BUILDFLAG(ENABLE_GLIC)
+  if (!IsGlicTabContextEnabled(pref_service_)) {
+    return;
+  }
+
+  // This call preflights grabbing the page content.
+  ZeroStateSuggestionsPageData::CreateForPage(web_contents->GetPrimaryPage());
+
+  if (loading_predictor_) {
+    net::NetworkAnonymizationKey anonymization_key =
+        net::NetworkAnonymizationKey::CreateSameSite(
+            net::SchemefulSite(mes_url_));
+    loading_predictor_->PreconnectURLIfAllowed(
+        mes_url_, /*allow_credentials=*/true, anonymization_key);
+  }
+#endif
 }
 
 void ContextualCueingService::GetContextualGlicZeroStateSuggestions(
     content::WebContents* web_contents,
     bool is_fre,
     GlicSuggestionsCallback callback) {
-  // TODO(crbug.com/405988283): Add branch for hints suggestions.
+  if (!base::FeatureList::IsEnabled(kGlicZeroStateSuggestions)) {
+    std::move(callback).Run(std::nullopt);
+    return;
+  }
+
+#if BUILDFLAG(ENABLE_GLIC)
+  if (!IsGlicTabContextEnabled(pref_service_)) {
+    std::move(callback).Run(std::nullopt);
+    return;
+  }
 
   // Remote suggestions generation.
-  ZeroStateSuggestionsPageData::CreateForPage(
-      web_contents->GetPrimaryPage(), web_contents,
-      optimization_guide_keyed_service_, is_fre,
-      base::BindOnce(&ContextualCueingService::OnSuggestionsReceived,
-                     GetWeakPtr(), web_contents, std::move(callback)));
+  ZeroStateSuggestionsPageData* page_data =
+      ZeroStateSuggestionsPageData::GetOrCreateForPage(
+          web_contents->GetPrimaryPage());
+  page_data->FetchSuggestions(
+      is_fre, base::BindOnce(&ContextualCueingService::OnSuggestionsReceived,
+                             GetWeakPtr(), web_contents, std::move(callback)));
+#else
+  std::move(callback).Run(std::nullopt);
+#endif
 }
 
 void ContextualCueingService::OnSuggestionsReceived(

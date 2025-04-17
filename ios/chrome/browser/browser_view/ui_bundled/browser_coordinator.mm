@@ -60,6 +60,7 @@
 #import "ios/chrome/browser/browser_container/model/edit_menu_builder.h"
 #import "ios/chrome/browser/browser_container/ui_bundled/browser_container_coordinator.h"
 #import "ios/chrome/browser/browser_container/ui_bundled/browser_container_view_controller.h"
+#import "ios/chrome/browser/browser_view/public/browser_view_visibility_state.h"
 #import "ios/chrome/browser/browser_view/ui_bundled/browser_coordinator+Testing.h"
 #import "ios/chrome/browser/browser_view/ui_bundled/browser_view_controller+private.h"
 #import "ios/chrome/browser/browser_view/ui_bundled/browser_view_controller.h"
@@ -118,6 +119,9 @@
 #import "ios/chrome/browser/infobars/model/infobar_ios.h"
 #import "ios/chrome/browser/infobars/model/infobar_manager_impl.h"
 #import "ios/chrome/browser/intelligence/enhanced_calendar/coordinator/enhanced_calendar_coordinator.h"
+#import "ios/chrome/browser/intelligence/enhanced_calendar/model/enhanced_calendar_configuration.h"
+#import "ios/chrome/browser/intelligence/glic/model/glic_service.h"
+#import "ios/chrome/browser/intelligence/glic/model/glic_service_factory.h"
 #import "ios/chrome/browser/intents/model/intents_donation_helper.h"
 #import "ios/chrome/browser/lens/ui_bundled/lens_coordinator.h"
 #import "ios/chrome/browser/lens_overlay/coordinator/lens_overlay_availability.h"
@@ -157,6 +161,7 @@
 #import "ios/chrome/browser/promos_manager/model/features.h"
 #import "ios/chrome/browser/promos_manager/ui_bundled/promos_manager_coordinator.h"
 #import "ios/chrome/browser/qr_scanner/ui_bundled/qr_scanner_legacy_coordinator.h"
+#import "ios/chrome/browser/reader_mode/model/reader_mode_tab_helper.h"
 #import "ios/chrome/browser/reading_list/model/reading_list_browser_agent.h"
 #import "ios/chrome/browser/reading_list/ui_bundled/reading_list_coordinator.h"
 #import "ios/chrome/browser/reading_list/ui_bundled/reading_list_coordinator_delegate.h"
@@ -220,6 +225,7 @@
 #import "ios/chrome/browser/shared/public/commands/promos_manager_commands.h"
 #import "ios/chrome/browser/shared/public/commands/qr_generation_commands.h"
 #import "ios/chrome/browser/shared/public/commands/quick_delete_commands.h"
+#import "ios/chrome/browser/shared/public/commands/reader_mode_commands.h"
 #import "ios/chrome/browser/shared/public/commands/reminder_notifications_commands.h"
 #import "ios/chrome/browser/shared/public/commands/save_image_to_photos_command.h"
 #import "ios/chrome/browser/shared/public/commands/save_to_drive_commands.h"
@@ -1057,6 +1063,7 @@ enum class ToolbarKind {
     @protocol(FeedCommands),
     @protocol(PromosManagerCommands),
     @protocol(FindInPageCommands),
+    @protocol(ReaderModeCommands),
     @protocol(NewTabPageCommands),
     @protocol(NonModalSignInPromoCommands),
     @protocol(PageInfoCommands),
@@ -2352,18 +2359,27 @@ enum class ToolbarKind {
   _enhancedSafeBrowsingPromoCoordinator = nil;
 }
 
+- (void)showPageActionMenu {
+  GlicService* glicService =
+      GlicServiceFactory::GetForProfile(self.browser->GetProfile());
+  glicService->PresentOverlayOnViewController(self.viewController);
+}
+
 #pragma mark - BrowserViewVisibilityConsumer
 
-- (void)browserViewDidChangeVisibility {
+- (void)browserViewDidTransitionFromVisibilityState:
+    (BrowserViewVisibilityState)previousState {
   CHECK(self.browser);
   raw_ptr<TabBasedIPHBrowserAgent> tabBasedIPHBrowserAgent =
       TabBasedIPHBrowserAgent::FromBrowser(self.browser);
   if (!tabBasedIPHBrowserAgent) {
     return;
   }
-  if (self.viewController.viewVisible) {
+
+  if (self.viewController.visibilityState ==
+      BrowserViewVisibilityState::kVisible) {
     tabBasedIPHBrowserAgent->RootViewForInProductHelpDidAppear();
-  } else {
+  } else if (previousState == BrowserViewVisibilityState::kVisible) {
     tabBasedIPHBrowserAgent->RootViewForInProductHelpWillDisappear();
   }
 }
@@ -2538,12 +2554,12 @@ enum class ToolbarKind {
 
 #pragma mark - EnhancedCalendarCommands
 
-- (void)showEnhancedCalendarBottomSheetWithIntegrationProvider:
-    (ios::provider::AddToCalendarIntegrationProvider)integrationProvider {
+- (void)showEnhancedCalendarWithConfig:
+    (EnhancedCalendarConfiguration*)enhancedCalendarConfig {
   _enhancedCalendarCoordinator = [[EnhancedCalendarCoordinator alloc]
       initWithBaseViewController:self.viewController
                          browser:self.browser
-             integrationProvider:integrationProvider];
+          enhancedCalendarConfig:enhancedCalendarConfig];
   [_enhancedCalendarCoordinator start];
 }
 
@@ -2560,6 +2576,25 @@ enum class ToolbarKind {
                          browser:self.browser
                  followedWebSite:followedWebSite];
   [self.firstFollowCoordinator start];
+}
+
+#pragma mark - ReaderModeCommands
+
+- (void)showReaderMode {
+  web::WebState* activeWebState = self.activeWebState;
+  if (!activeWebState) {
+    return;
+  }
+  ReaderModeTabHelper* readerModeTabHelper =
+      ReaderModeTabHelper::FromWebState(activeWebState);
+  if (!readerModeTabHelper) {
+    return;
+  }
+  readerModeTabHelper->TriggerReaderModeHeuristic();
+}
+
+- (void)hideReaderMode {
+  // TODO(crbug.com/409940117): Hide reader mode UI when requested.
 }
 
 #pragma mark - FindInPageCommands
@@ -3784,7 +3819,8 @@ enum class ToolbarKind {
 #pragma mark - BubblePresenterDelegate
 
 - (BOOL)rootViewVisibleForBubblePresenter:(BubblePresenter*)bubblePresenter {
-  return self.viewController.viewVisible;
+  return self.viewController.visibilityState ==
+         BrowserViewVisibilityState::kVisible;
 }
 
 - (BOOL)isNTPActiveForBubblePresenter:(BubblePresenter*)bubblePresenter {

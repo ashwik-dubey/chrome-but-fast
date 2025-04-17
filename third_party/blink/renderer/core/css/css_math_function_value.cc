@@ -70,11 +70,6 @@ double CSSMathFunctionValue::DoubleValue() const {
   return ClampToPermittedRange(expression_->DoubleValue());
 }
 
-double CSSMathFunctionValue::ComputeSeconds() const {
-  DCHECK_EQ(kCalcTime, expression_->Category());
-  return ClampToPermittedRange(*expression_->ComputeValueInCanonicalUnit());
-}
-
 double CSSMathFunctionValue::ComputeDegrees() const {
   DCHECK_EQ(kCalcAngle, expression_->Category());
   return ClampToPermittedRange(*expression_->ComputeValueInCanonicalUnit());
@@ -154,11 +149,6 @@ double CSSMathFunctionValue::ComputeValueInCanonicalUnit(
   DCHECK(optional_value.has_value());
   double value = ClampToPermittedRange(optional_value.value());
   return std::isnan(value) ? 0.0 : value;
-}
-
-double CSSMathFunctionValue::ComputeDotsPerPixel() const {
-  DCHECK_EQ(kCalcResolution, expression_->Category());
-  return ClampToPermittedRange(*expression_->ComputeValueInCanonicalUnit());
 }
 
 bool CSSMathFunctionValue::AccumulateLengthArray(CSSLengthArray& length_array,

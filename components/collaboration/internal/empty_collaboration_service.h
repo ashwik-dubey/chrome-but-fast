@@ -21,12 +21,15 @@ class EmptyCollaborationService : public CollaborationService {
   void AddObserver(Observer* observer) override;
   void RemoveObserver(Observer* observer) override;
   void StartJoinFlow(std::unique_ptr<CollaborationControllerDelegate> delegate,
-                     const GURL& url,
-                     CollaborationServiceJoinEntryPoint entry) override;
+                     const GURL& url) override;
   void StartShareOrManageFlow(
       std::unique_ptr<CollaborationControllerDelegate> delegate,
       const tab_groups::EitherGroupID& either_id,
       CollaborationServiceShareOrManageEntryPoint entry) override;
+  void StartLeaveOrDeleteFlow(
+      std::unique_ptr<CollaborationControllerDelegate> delegate,
+      const tab_groups::EitherGroupID& either_id,
+      CollaborationServiceLeaveOrDeleteEntryPoint entry) override;
   void CancelAllFlows(base::OnceCallback<void()> finish_callback) override;
   ServiceStatus GetServiceStatus() override;
   data_sharing::MemberRole GetCurrentUserRoleForGroup(
@@ -37,6 +40,11 @@ class EmptyCollaborationService : public CollaborationService {
                    base::OnceCallback<void(bool)> callback) override;
   void LeaveGroup(const data_sharing::GroupId& group_id,
                   base::OnceCallback<void(bool)> callback) override;
+  bool ShouldInterceptNavigationForShareURL(const GURL& url) override;
+  void HandleShareURLNavigationIntercepted(
+      const GURL& url,
+      std::unique_ptr<data_sharing::ShareURLInterceptionContext> context,
+      CollaborationServiceJoinEntryPoint entry) override;
 };
 
 }  // namespace collaboration

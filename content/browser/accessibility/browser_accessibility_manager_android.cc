@@ -9,6 +9,7 @@
 #include "base/check.h"
 #include "base/containers/contains.h"
 #include "base/i18n/char_iterator.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_android.h"
 #include "content/browser/accessibility/web_contents_accessibility_android.h"
 #include "content/public/common/content_features.h"
@@ -273,13 +274,19 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
       if (android_node->GetRole() == ax::mojom::Role::kToggleButton ||
           android_node->GetRole() == ax::mojom::Role::kSwitch ||
           android_node->GetRole() == ax::mojom::Role::kRadioButton) {
-        wcax->HandleStateDescriptionChanged(android_node->GetUniqueId());
+        wcax->HandleWindowContentChange(
+            android_node->GetUniqueId(),
+            ANDROID_ACCESSIBILITY_EVENT_CONTENT_CHANGE_TYPE_STATE_DESCRIPTION);
       }
       break;
     case ui::AXEventGenerator::Event::DESCRIPTION_CHANGED: {
-      wcax->HandleDescriptionChangedSubtree(android_node->GetUniqueId());
+      wcax->HandleWindowContentChange(
+          android_node->GetUniqueId(),
+          ANDROID_ACCESSIBILITY_EVENT_CONTENT_CHANGE_TYPE_UNDEFINED);
       if (android_node->GetRole() == ax::mojom::Role::kDialog) {
-        wcax->HandleDescriptionChangedPaneTitle(android_node->GetUniqueId());
+        wcax->HandleWindowContentChange(
+            android_node->GetUniqueId(),
+            ANDROID_ACCESSIBILITY_EVENT_CONTENT_CHANGE_TYPE_PANE_TITLE);
       }
       break;
     }
@@ -299,15 +306,21 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
           GetFocus()->IsDescendantOf(android_node)) {
         wcax->HandlePaneOpened(android_node->GetUniqueId());
       }
-      wcax->HandleExpandedStateChanged(android_node->GetUniqueId());
+      wcax->HandleWindowContentChange(
+            android_node->GetUniqueId(),
+            ANDROID_ACCESSIBILITY_EVENT_CONTENT_CHANGE_TYPE_EXPANDED);
       break;
     }
     case ui::AXEventGenerator::Event::COLLAPSED: {
-      wcax->HandleExpandedStateChanged(android_node->GetUniqueId());
+      wcax->HandleWindowContentChange(
+            android_node->GetUniqueId(),
+            ANDROID_ACCESSIBILITY_EVENT_CONTENT_CHANGE_TYPE_EXPANDED);
       break;
     }
     case ui::AXEventGenerator::Event::IMAGE_ANNOTATION_CHANGED: {
-      wcax->HandleImageAnnotationChanged(android_node->GetUniqueId());
+      wcax->HandleWindowContentChange(
+          android_node->GetUniqueId(),
+          ANDROID_ACCESSIBILITY_EVENT_CONTENT_CHANGE_TYPE_TEXT);
       break;
     }
     case ui::AXEventGenerator::Event::LIVE_REGION_NODE_CHANGED: {
@@ -334,7 +347,9 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
       // If this is a simple text element, also send an event to the framework.
       if (ui::IsText(android_node->GetRole()) ||
           android_node->IsAndroidTextView()) {
-        wcax->HandleTextContentChanged(android_node->GetUniqueId());
+        wcax->HandleWindowContentChange(
+            android_node->GetUniqueId(),
+            ANDROID_ACCESSIBILITY_EVENT_CONTENT_CHANGE_TYPE_TEXT);
       }
       break;
     }

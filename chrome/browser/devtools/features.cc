@@ -97,7 +97,7 @@ const base::FeatureParam<DevToolsFreestylerUserTier>
 const base::FeatureParam<bool>
     kDevToolsAiAssistancePerformanceAgentInsightsEnabled{
         &kDevToolsAiAssistancePerformanceAgent, "insights_enabled",
-        /*default_value=*/false};
+        /*default_value=*/true};
 
 // Whether the DevTools AI Assistance File Agent is enabled.
 BASE_FEATURE(kDevToolsAiAssistanceFileAgent,
@@ -138,7 +138,7 @@ BASE_FEATURE(kDevToolsAnimationStylesInStylesTab,
 // See http://go/chrome-devtools:automatic-workspace-folders-design for details.
 BASE_FEATURE(kDevToolsAutomaticFileSystems,
              "DevToolsAutomaticFileSystems",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Whether DevTools will attempt to load project settings from a well-known
 // URI. See https://goo.gle/devtools-json-design for additional details.
@@ -155,7 +155,12 @@ BASE_FEATURE(kDevToolsCssValueTracing,
 // Whether the DevTools AI generated annotation labels in timeline are enabled.
 BASE_FEATURE(kDevToolsAiGeneratedTimelineLabels,
              "DevToolsAiGeneratedTimelineLabels",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Whether the DevTools AI generated annotation labels in timeline are enabled.
+BASE_FEATURE(kDevToolsNewPermissionDialog,
+             "DevToolsNewPermissionDialog",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 // If enabled, DevTools does not accept remote debugging connections unless

@@ -99,6 +99,7 @@ source_set("extensions") {
     "api/identity/launch_web_auth_flow_delegate.h",
     "api/identity/web_auth_flow_info_bar_delegate.cc",
     "api/identity/web_auth_flow_info_bar_delegate.h",
+    "api/management/chrome_management_api_delegate.h",
     "api/messaging/incognito_connectability.cc",
     "api/messaging/incognito_connectability.h",
     "api/messaging/incognito_connectability_infobar_delegate.cc",
@@ -142,6 +143,10 @@ source_set("extensions") {
     "api/tabs/windows_util.h",
     "api/top_sites/top_sites_api.cc",
     "api/top_sites/top_sites_api.h",
+    "api/webstore_private/extension_install_status.cc",
+    "api/webstore_private/extension_install_status.h",
+    "api/webstore_private/webstore_private_api.cc",
+    "api/webstore_private/webstore_private_api.h",
     "blocklist.cc",
     "blocklist.h",
     "blocklist_check.cc",
@@ -181,12 +186,12 @@ source_set("extensions") {
     "corrupted_extension_reinstaller_factory.h",
     "crx_installer.cc",
     "crx_installer.h",
+    "cws_info_service.cc",
+    "cws_info_service.h",
+    "cws_info_service_factory.cc",
+    "cws_info_service_factory.h",
     "data_deleter.cc",
     "data_deleter.h",
-    "delayed_install_manager.cc",
-    "delayed_install_manager.h",
-    "delayed_install_manager_factory.cc",
-    "delayed_install_manager_factory.h",
     "devtools_util.cc",
     "devtools_util.h",
     "error_console/error_console.cc",
@@ -195,6 +200,8 @@ source_set("extensions") {
     "error_console/error_console_factory.h",
     "event_router_forwarder.cc",
     "event_router_forwarder.h",
+    "extension_action_dispatcher.cc",
+    "extension_action_dispatcher.h",
     "extension_allowlist.cc",
     "extension_allowlist.h",
     "extension_allowlist_factory.cc",
@@ -213,6 +220,8 @@ source_set("extensions") {
     "extension_install_prompt.h",
     "extension_install_prompt_show_params.cc",
     "extension_install_prompt_show_params.h",
+    "extension_management.cc",
+    "extension_management.h",
     "extension_management_constants.cc",
     "extension_management_constants.h",
     "extension_management_internal.cc",
@@ -242,6 +251,8 @@ source_set("extensions") {
     "external_install_manager_factory.h",
     "external_loader.cc",
     "external_loader.h",
+    "external_policy_loader.cc",
+    "external_policy_loader.h",
     "external_pref_loader.cc",
     "external_pref_loader.h",
     "external_provider_impl.cc",
@@ -260,7 +271,6 @@ source_set("extensions") {
     "forced_extensions/install_stage_tracker_factory.h",
     "install_approval.cc",
     "install_approval.h",
-    "install_gate.h",
     "install_observer.cc",
     "install_observer.h",
     "install_prompt_permissions.cc",
@@ -293,6 +303,8 @@ source_set("extensions") {
     "permissions/permissions_updater.h",
     "permissions/scripting_permissions_modifier.cc",
     "permissions/scripting_permissions_modifier.h",
+    "permissions_based_management_policy_provider.cc",
+    "permissions_based_management_policy_provider.h",
     "permissions_url_constants.cc",
     "permissions_url_constants.h",
     "policy_handlers.cc",
@@ -308,9 +320,17 @@ source_set("extensions") {
     "scoped_active_install.h",
     "settings_api_helpers.cc",
     "settings_api_helpers.h",
+    "shared_module_service.cc",
+    "shared_module_service.h",
+    "shared_module_service_factory.cc",
+    "shared_module_service_factory.h",
+    "standard_management_policy_provider.cc",
+    "standard_management_policy_provider.h",
     "startup_helper.cc",
     "startup_helper.h",
     "system_display/display_info_provider.h",
+    "unpacked_installer.cc",
+    "unpacked_installer.h",
     "updater/chrome_extension_downloader_factory.cc",
     "updater/chrome_extension_downloader_factory.h",
     "updater/chrome_update_client_config.cc",
@@ -331,6 +351,8 @@ source_set("extensions") {
     "webstore_data_fetcher_delegate.h",
     "webstore_install_helper.cc",
     "webstore_install_helper.h",
+    "webstore_installer.cc",
+    "webstore_installer.h",
     "window_controller.cc",
     "window_controller.h",
     "window_controller_list.cc",
@@ -341,6 +363,11 @@ source_set("extensions") {
     "//build/config:precompiled_headers",
     "//build/config/compiler:wexit_time_destructors",
   ]
+  allow_circular_includes_from = [
+    # TODO(crbug.com/40161499): Remove this circular dependency.
+    "//chrome/browser/devtools",
+    "//chrome/browser/ui/safety_hub",
+  ]
   deps = [
     "//base",
     "//chrome/app:command_ids",
@@ -349,6 +376,7 @@ source_set("extensions") {
     "//chrome/browser/bitmap_fetcher",
     "//chrome/browser/content_settings:content_settings_factory",
     "//chrome/browser/devtools",
+    "//chrome/browser/download",
     "//chrome/browser/extensions:cws_item_service_proto",
     "//chrome/browser/extensions/api:api_registration",
     "//chrome/browser/favicon",
@@ -369,7 +397,10 @@ source_set("extensions") {
     "//components/content_settings/core/browser:cookie_settings",
     "//components/cookie_config",
     "//components/crx_file",
+    "//components/data_sharing/public",
+    "//components/data_sharing/public:features",
     "//components/embedder_support",
+    "//components/enterprise",
     "//components/infobars/content",
     "//components/infobars/core",
     "//components/no_state_prefetch/browser",
@@ -379,13 +410,16 @@ source_set("extensions") {
     "//components/privacy_sandbox:privacy_sandbox_prefs",
     "//components/privacy_sandbox:tracking_protection_prefs",
     "//components/proxy_config",
+    "//components/safe_browsing/content/browser",
     "//components/safe_browsing/core/browser:safe_browsing_metrics_collector",
     "//components/safe_browsing/core/browser/db:database_manager",
     "//components/safe_browsing/core/common",
     "//components/safe_browsing/core/common:safe_browsing_prefs",
+    "//components/saved_tab_groups/public",
     "//components/services/patch/content",
     "//components/services/unzip/content",
     "//components/spellcheck/browser",
+    "//components/supervised_user/core/browser",
     "//components/update_client",
     "//components/update_client:common_impl",
     "//components/user_prefs",
@@ -402,6 +436,7 @@ source_set("extensions") {
     "//net:extras",
     "//storage/browser",
     "//third_party/zlib/google:zip",
+    "//ui/shell_dialogs",
   ]
   public_deps = [ "//components/safe_browsing/core/browser/db:util" ]
   defines = []
@@ -414,6 +449,7 @@ source_set("extensions") {
       "api/developer_private/extension_info_generator_android.h",
       "api/identity/identity_unimplemented_functions_android.cc",
       "api/identity/identity_unimplemented_functions_android.h",
+      "api/management/chrome_management_api_delegate_android.cc",
       "extension_disabled_ui_android.cc",
       "extension_error_ui_android.cc",
       "extension_error_ui_android.h",
@@ -519,8 +555,7 @@ source_set("extensions") {
       "api/language_settings_private/language_settings_private_delegate.h",
       "api/language_settings_private/language_settings_private_delegate_factory.cc",
       "api/language_settings_private/language_settings_private_delegate_factory.h",
-      "api/management/chrome_management_api_delegate.cc",
-      "api/management/chrome_management_api_delegate.h",
+      "api/management/chrome_management_api_delegate_nonandroid.cc",
       "api/messaging/chrome_messaging_delegate.cc",
       "api/messaging/chrome_messaging_delegate.h",
       "api/messaging/chrome_native_message_port_dispatcher.cc",
@@ -584,10 +619,6 @@ source_set("extensions") {
       "api/tabs/tabs_windows_api.h",
       "api/tabs/windows_event_router.cc",
       "api/tabs/windows_event_router.h",
-      "api/webstore_private/extension_install_status.cc",
-      "api/webstore_private/extension_install_status.h",
-      "api/webstore_private/webstore_private_api.cc",
-      "api/webstore_private/webstore_private_api.h",
       "bookmarks/bookmarks_helpers.cc",
       "bookmarks/bookmarks_helpers.h",
       "browser_extension_window_controller.cc",
@@ -632,14 +663,8 @@ source_set("extensions") {
       "context_menu_helpers.h",
       "context_menu_matcher.cc",
       "context_menu_matcher.h",
-      "cws_info_service.cc",
-      "cws_info_service.h",
-      "cws_info_service_factory.cc",
-      "cws_info_service_factory.h",
       "device_permissions_dialog_controller.cc",
       "device_permissions_dialog_controller.h",
-      "extension_action_dispatcher.cc",
-      "extension_action_dispatcher.h",
       "extension_action_runner.cc",
       "extension_action_runner.h",
       "extension_action_storage_manager.cc",
@@ -661,8 +686,6 @@ source_set("extensions") {
       "extension_gcm_app_handler.h",
       "extension_keybinding_registry.cc",
       "extension_keybinding_registry.h",
-      "extension_management.cc",
-      "extension_management.h",
       "extension_menu_icon_loader.cc",
       "extension_menu_icon_loader.h",
       "extension_safety_check_utils.cc",
@@ -690,8 +713,6 @@ source_set("extensions") {
       "extension_view_host_factory.h",
       "external_install_error_desktop.cc",
       "external_install_error_desktop.h",
-      "external_policy_loader.cc",
-      "external_policy_loader.h",
       "file_handlers/file_handling_launch_utils.cc",
       "file_handlers/file_handling_launch_utils.h",
       "forced_extensions/force_installed_metrics.cc",
@@ -715,32 +736,20 @@ source_set("extensions") {
       "omaha_attributes_handler.h",
       "permissions/site_permissions_helper.cc",
       "permissions/site_permissions_helper.h",
-      "permissions_based_management_policy_provider.cc",
-      "permissions_based_management_policy_provider.h",
       "safe_browsing_verdict_handler.cc",
       "safe_browsing_verdict_handler.h",
-      "shared_module_service.cc",
-      "shared_module_service.h",
-      "standard_management_policy_provider.cc",
-      "standard_management_policy_provider.h",
       "sync_bundle.cc",
       "sync_bundle.h",
       "tab_helper.cc",
       "tab_helper.h",
       "theme_installed_infobar_delegate.cc",
       "theme_installed_infobar_delegate.h",
-      "unpacked_installer.cc",
-      "unpacked_installer.h",
-      "update_install_gate.cc",
-      "update_install_gate.h",
       "warning_badge_service.cc",
       "warning_badge_service.h",
       "warning_badge_service_factory.cc",
       "warning_badge_service_factory.h",
       "webstore_install_with_prompt.cc",
       "webstore_install_with_prompt.h",
-      "webstore_installer.cc",
-      "webstore_installer.h",
       "webstore_reinstaller.cc",
       "webstore_reinstaller.h",
       "webstore_standalone_installer.cc",
@@ -764,12 +773,9 @@ source_set("extensions") {
       ]
     }
 
-    allow_circular_includes_from = [
+    allow_circular_includes_from += [
       # TODO(b/40251079): Remove this circular dependency.
       "//chrome/browser/apps/app_service/app_icon",
-
-      # TODO(crbug.com/40161499): Remove this circular dependency.
-      "//chrome/browser/devtools",
 
       # Lots of APIs use headers from the list above.
       "//chrome/browser/extensions/api:api_registration",
@@ -794,7 +800,6 @@ source_set("extensions") {
 
       "//chrome/browser/feedback",
       "//chrome/browser/ui/views/toolbar",
-      "//chrome/browser/ui/safety_hub",
     ]
 
     # Since browser and browser_extensions actually depend on each other,
@@ -890,12 +895,9 @@ source_set("extensions") {
       "//components/commerce/core:pref_names",
       "//components/device_reauth",
       "//components/optimization_guide/core:features",
-      "//components/safe_browsing/content/browser",
-      "//components/saved_tab_groups/public",
       "//components/security_interstitials/content:security_interstitial_page",
       "//components/security_state/content",
       "//components/site_engagement/core/mojom:mojo_bindings",
-      "//components/supervised_user/core/browser",
       "//components/supervised_user/core/common:common",
       "//components/webapps/browser",
       "//components/webapps/common",
@@ -1033,7 +1035,6 @@ source_set("extensions") {
       "//ui/message_center/public/cpp",
       "//ui/native_theme",
       "//ui/resources",
-      "//ui/shell_dialogs",
       "//ui/strings",
       "//url",
     ]
@@ -1115,6 +1116,8 @@ source_set("extensions") {
             [ "//chrome/browser/chromeos/extensions/printing_metrics" ]
       }
 
+      public_deps += [ "//chrome/browser/chromeos/extensions/component_extension_content_settings" ]
+
       deps += [
         "//chrome/browser/chromeos/app_mode",
         "//chrome/browser/chromeos/drivefs",
@@ -1143,6 +1146,7 @@ source_set("extensions") {
         "//chrome/browser/chromeos/app_mode",
         "//chrome/browser/chromeos/drivefs",
         "//chrome/browser/chromeos/extensions/contact_center_insights",
+        "//chrome/browser/chromeos/extensions/component_extension_content_settings",
         "//chrome/browser/chromeos/extensions/desk_api",
         "//chrome/browser/chromeos/extensions/external_loader",
         "//chrome/browser/chromeos/extensions/file_system_provider",
@@ -1522,6 +1526,8 @@ static_library("test_support") {
   testonly = true
 
   sources = [
+    "chrome_test_extension_loader.cc",
+    "chrome_test_extension_loader.h",
     "extension_management_test_util.cc",
     "extension_management_test_util.h",
     "mock_extension_special_storage_policy.cc",
@@ -1534,8 +1540,15 @@ static_library("test_support") {
     "//chrome/browser/extensions",
     "//components/crx_file",
     "//components/policy/core/common:test_support",
+    "//extensions:test_support",
     "//testing/gmock",
   ]
+
+  if (is_android) {
+    sources += [ "chrome_test_extension_loader_android.cc" ]
+  } else {
+    sources += [ "chrome_test_extension_loader_non_android.cc" ]
+  }
 
   if (enable_extensions) {
     sources += [
@@ -1545,8 +1558,6 @@ static_library("test_support") {
       "api/passwords_private/test_passwords_private_delegate.h",
       "chrome_extension_test_notification_observer.cc",
       "chrome_extension_test_notification_observer.h",
-      "chrome_test_extension_loader.cc",
-      "chrome_test_extension_loader.h",
       "extension_action_test_util.cc",
       "extension_action_test_util.h",
       "external_testing_loader.cc",

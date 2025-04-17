@@ -4,12 +4,14 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
+import static org.chromium.chrome.browser.tasks.tab_management.TabKeyEventHandler.onPageKeyEvent;
 import static org.chromium.chrome.browser.tasks.tab_management.TabListContainerProperties.ALL_KEYS;
 import static org.chromium.chrome.browser.tasks.tab_management.TabListContainerProperties.BROWSER_CONTROLS_STATE_PROVIDER;
 import static org.chromium.chrome.browser.tasks.tab_management.TabListContainerProperties.FETCH_VIEW_BY_INDEX_CALLBACK;
 import static org.chromium.chrome.browser.tasks.tab_management.TabListContainerProperties.GET_VISIBLE_RANGE_CALLBACK;
 import static org.chromium.chrome.browser.tasks.tab_management.TabListContainerProperties.IS_SCROLLING_SUPPLIER_CALLBACK;
 import static org.chromium.chrome.browser.tasks.tab_management.TabListContainerProperties.MODE;
+import static org.chromium.chrome.browser.tasks.tab_management.TabListContainerProperties.PAGE_KEY_LISTENER;
 
 import android.app.Activity;
 import android.content.res.Resources;
@@ -47,6 +49,7 @@ import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.profiles.ProfileProvider;
 import org.chromium.chrome.browser.share.ShareDelegate;
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.tab_ui.ActionConfirmationManager;
 import org.chromium.chrome.browser.tab_ui.RecyclerViewPosition;
 import org.chromium.chrome.browser.tab_ui.TabContentManager;
 import org.chromium.chrome.browser.tab_ui.TabSwitcherCustomViewManager;
@@ -59,6 +62,7 @@ import org.chromium.chrome.browser.tasks.tab_management.TabListMediator.GridCard
 import org.chromium.chrome.browser.tasks.tab_management.TabSwitcherMessageManager.MessageUpdateObserver;
 import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeController;
 import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeUtils;
+import org.chromium.chrome.browser.undo_tab_close_snackbar.UndoBarThrottle;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.desktop_windowing.DesktopWindowStateManager;
@@ -210,7 +214,8 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
             @NonNull ObservableSupplier<EdgeToEdgeController> edgeToEdgeSupplier,
             @Nullable DesktopWindowStateManager desktopWindowStateManager,
             @NonNull ObservableSupplier<ShareDelegate> shareDelegateSupplier,
-            @NonNull ObservableSupplier<TabBookmarker> tabBookmarkerSupplier) {
+            @NonNull ObservableSupplier<TabBookmarker> tabBookmarkerSupplier,
+            UndoBarThrottle undoBarThrottle) {
         try (TraceEvent e = TraceEvent.scoped("TabSwitcherPaneCoordinator.constructor")) {
             mProfileProviderSupplier = profileProviderSupplier;
             mIsVisibleSupplier = isVisibleSupplier;
@@ -235,6 +240,13 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
                             .with(
                                     IS_SCROLLING_SUPPLIER_CALLBACK,
                                     (f) -> mIsScrollingSupplier.set(f))
+                            .with(
+                                    PAGE_KEY_LISTENER,
+                                    event ->
+                                            onPageKeyEvent(
+                                                    event,
+                                                    mTabGroupModelFilterSupplier.get(),
+                                                    /* moveSingleTab= */ false))
                             .build();
 
             mContainerViewModel = containerViewModel;
@@ -266,7 +278,14 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
                                                 scrimManager,
                                                 actionConfirmationManager,
                                                 mModalDialogManager,
-                                                desktopWindowStateManager);
+                                                desktopWindowStateManager,
+                                                undoBarThrottle);
+                                mTabGridDialogCoordinator.setPageKeyEvent(
+                                        event ->
+                                                onPageKeyEvent(
+                                                        event,
+                                                        mTabGroupModelFilterSupplier.get(),
+                                                        /* moveSingleTab= */ true));
                                 return mTabGridDialogCoordinator.getDialogController();
                             });
 
@@ -742,6 +761,10 @@ public class TabSwitcherPaneCoordinator implements BackPressHandler {
     @Nullable
     EdgeToEdgePadAdjuster getEdgeToEdgePadAdjusterForTesting() {
         return mEdgeToEdgePadAdjuster;
+    }
+
+    /* package */ TabGridDialogCoordinator getTabGridDialogCoordinatorForTesting() {
+        return mTabGridDialogCoordinator;
     }
 
     void showQuickDeleteAnimation(Runnable onAnimationEnd, List<Tab> tabs) {

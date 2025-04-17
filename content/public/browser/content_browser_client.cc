@@ -1069,9 +1069,7 @@ ContentBrowserClient::CreateURLLoaderThrottles(
 
 std::vector<std::unique_ptr<blink::URLLoaderThrottle>>
 ContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
-    const network::ResourceRequest& request,
     BrowserContext* browser_context,
-    const base::RepeatingCallback<WebContents*()>& wc_getter,
     FrameTreeNodeId frame_tree_node_id) {
   return std::vector<std::unique_ptr<blink::URLLoaderThrottle>>();
 }
@@ -1354,9 +1352,9 @@ ContentBrowserClient::CreateWindowForVideoPictureInPicture(
   return nullptr;
 }
 
-media::PictureInPictureEventsInfo::AutoPipReason
-ContentBrowserClient::GetAutoPipReason(const WebContents& web_contents) const {
-  return media::PictureInPictureEventsInfo::AutoPipReason::kUnknown;
+media::PictureInPictureEventsInfo::AutoPipInfo
+ContentBrowserClient::GetAutoPipInfo(const WebContents& web_contents) const {
+  return media::PictureInPictureEventsInfo::AutoPipInfo();
 }
 
 void ContentBrowserClient::RegisterRendererPreferenceWatcher(
@@ -1855,6 +1853,7 @@ bool ContentBrowserClient::ShouldSuppressAXLoadComplete(RenderFrameHost* rfh) {
 void ContentBrowserClient::BindAIManager(
     BrowserContext* browser_context,
     base::SupportsUserData* context_user_data,
+    RenderFrameHost* rfh,
     mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
   EchoAIManagerImpl::Create(std::move(receiver));
 }

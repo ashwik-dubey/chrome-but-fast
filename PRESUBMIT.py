@@ -919,7 +919,7 @@ _BANNED_CPP_FUNCTIONS: Sequence[BanRule] = (
             r'content/browser/webid/federated_auth_request_impl\.cc',
             r'media/cast/test/utility/udp_proxy\.h',
             r'sql/recover_module/module_unittest\.cc',
-            r'components/search_engines/template_url_prepopulate_data.cc',
+            r'components/regional_capabilities/regional_capabilities_utils.cc',
             # Do not add new entries to this list. If you have a use case which is
             # not satisfied by the current APIs (i.e. you need an explicitly-seeded
             # sequence, or stability of some sort is required), please contact
@@ -1711,15 +1711,6 @@ _BANNED_CPP_FUNCTIONS: Sequence[BanRule] = (
         [_THIRD_PARTY_EXCEPT_BLINK],  # Not an error in third_party folders.
     ),
     BanRule(
-        'set_owned_by_client',
-        ('set_owned_by_client is deprecated.',
-         'views::View already owns the child views by default. This introduces ',
-         'a competing ownership model which makes the code difficult to reason ',
-         'about. See http://crbug.com/1044687 for more details.'),
-        False,
-        (),
-    ),
-    BanRule(
         'RemoveAllChildViewsWithoutDeleting',
         ('RemoveAllChildViewsWithoutDeleting is deprecated.',
          'This method is deemed dangerous as, unless raw pointers are re-added,',
@@ -2476,7 +2467,7 @@ _KNOWN_ROBOTS = set(
   ) | set('%s@skia-corp.google.com.iam.gserviceaccount.com' % s
           for s in ('chromium-internal-autoroll',)
   ) | set('%s@system.gserviceaccount.com' % s
-          for s in ('chrome-screen-ai-releaser',)
+          for s in ('chrome-screen-ai-releaser', 'crash-eng', 'crash')
   ) | set('%s@owners-cleanup-prod.google.com.iam.gserviceaccount.com' % s
           for s in ('swarming-tasks',)
   ) | set('%s@fuchsia-infra.iam.gserviceaccount.com' % s
@@ -6147,10 +6138,13 @@ def ChecksCommon(input_api, output_api):
             input_api, output_api))
 
     presubmit_py_filter = lambda f: input_api.FilterSourceFile(
-        f, files_to_check=[r'.*PRESUBMIT\.py$'])
-    for f in input_api.AffectedFiles(include_deletes=False,
-                                     file_filter=presubmit_py_filter):
-        full_path = input_api.os_path.dirname(f.AbsoluteLocalPath())
+        f, files_to_check=[r'.*PRESUBMIT(?:_test)?\.py$'])
+    potential_paths = set(
+        map(
+            lambda f: input_api.os_path.dirname(f.AbsoluteLocalPath()),
+            input_api.AffectedFiles(include_deletes=False,
+                                    file_filter=presubmit_py_filter)))
+    for full_path in potential_paths:
         test_file = input_api.os_path.join(full_path, 'PRESUBMIT_test.py')
         # The PRESUBMIT.py file (and the directory containing it) might have
         # been affected by being moved or removed, so only try to run the tests
@@ -7186,6 +7180,21 @@ def CheckTranslationExpectations(input_api, output_api,
                                          'tests')
     grd_files = [p for p in grd_files if ignore_path not in p]
 
+    # Ensure no duplicate basenames.
+    basename_to_src_paths = {}
+    for grd_path in grd_files:
+        basename = input_api.os_path.basename(grd_path)
+        basename_to_src_paths.setdefault(basename, [])
+        basename_to_src_paths[basename].append(grd_path)
+    for src_paths in basename_to_src_paths.values():
+        if len(src_paths) > 1:
+            return [
+                output_api.PresubmitNotifyResult(
+                    'Multiple string files have the same basename. This will result in '
+                    'missing translations. Files: %s'
+                    % ', '.join(src_paths))
+            ]
+
     try:
         translation_helper.get_translatable_grds(
             repo_root, grd_files, translation_expectations_path, is_cog)
@@ -7593,6 +7602,10 @@ a subclass of it), or use "@Rule BaseRobolectricTestRule".
 
 def _CheckAndroidNullAwayAnnotatedClasses(input_api, output_api):
     """Checks that Java classes/interfaces/annotations are null-annotated."""
+
+    # Temporary, crbug.com/389129271
+    if input_api.change.RepositoryRoot().endswith('clank'):
+        return []
 
     nullmarked_annotation = input_api.re.compile(r'^\s*@(NullMarked|NullUnmarked)')
 

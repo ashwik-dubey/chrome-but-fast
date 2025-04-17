@@ -23,9 +23,11 @@ namespace data_sharing {
 
 DataSharingUIDelegateIOS::DataSharingUIDelegateIOS(
     ShareKitService* share_kit_service,
-    collaboration::CollaborationService* collaboration_service)
+    collaboration::CollaborationService* collaboration_service,
+    TabGroupService* tab_group_service)
     : share_kit_service_(share_kit_service),
-      collaboration_service_(collaboration_service) {}
+      collaboration_service_(collaboration_service),
+      tab_group_service_(tab_group_service) {}
 DataSharingUIDelegateIOS::~DataSharingUIDelegateIOS() = default;
 
 void DataSharingUIDelegateIOS::HandleShareURLIntercepted(
@@ -58,10 +60,8 @@ void DataSharingUIDelegateIOS::OnJoinFlowReadyToBePresented(GURL url,
 
   std::unique_ptr<IOSCollaborationControllerDelegate> delegate =
       std::make_unique<IOSCollaborationControllerDelegate>(
-          browser, base_view_controller);
-  collaboration_service_->StartJoinFlow(
-      std::move(delegate), url,
-      collaboration::CollaborationServiceJoinEntryPoint::kUnknown);
+          browser, base_view_controller, tab_group_service_);
+  collaboration_service_->StartJoinFlow(std::move(delegate), url);
 }
 
 }  // namespace data_sharing

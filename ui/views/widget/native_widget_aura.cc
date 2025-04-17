@@ -482,8 +482,6 @@ void NativeWidgetAura::CenterWindow(const gfx::Size& size) {
     return;
   }
 
-  window_->SetProperty(aura::client::kPreferredSize, size);
-
   gfx::Rect parent_bounds(window_->parent()->GetBoundsInRootWindow());
   // When centering window, we take the intersection of the host and
   // the parent. We assume the root window represents the visible
@@ -566,7 +564,7 @@ void NativeWidgetAura::InitModalType(ui::mojom::ModalType modal_type) {
   }
 }
 
-void NativeWidgetAura::SetColorMode(
+void NativeWidgetAura::OnWidgetThemeChanged(
     ui::ColorProviderKey::ColorMode color_mode) {
   // Intentional no-op.
   // The window frame is drawn by views. The OS does not need to know about
@@ -1244,6 +1242,18 @@ void NativeWidgetAura::OnResizeLoopStarted(aura::Window* window) {
 }
 
 void NativeWidgetAura::OnResizeLoopEnded(aura::Window* window) {
+  if (delegate_) {
+    delegate_->OnNativeWidgetEndUserBoundsChange();
+  }
+}
+
+void NativeWidgetAura::OnMoveLoopStarted(aura::Window* window) {
+  if (delegate_) {
+    delegate_->OnNativeWidgetBeginUserBoundsChange();
+  }
+}
+
+void NativeWidgetAura::OnMoveLoopEnded(aura::Window* window) {
   if (delegate_) {
     delegate_->OnNativeWidgetEndUserBoundsChange();
   }

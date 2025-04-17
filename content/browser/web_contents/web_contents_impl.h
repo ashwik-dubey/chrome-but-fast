@@ -312,10 +312,6 @@ class CONTENT_EXPORT WebContentsImpl
     return delegated_ink_point_renderer_.is_bound();
   }
 
-  // Adds the given accessibility mode to the current accessibility mode
-  // bitmap.
-  void AddAccessibilityModeForTesting(ui::AXMode mode);
-
   // Sets the zoom level for frames associated with this WebContents.
   void UpdateZoom();
 
@@ -361,10 +357,6 @@ class CONTENT_EXPORT WebContentsImpl
   // first commit.
   // TODO(crbug.com/40165695): Rename to HasAccessedInitialMainDocument
   bool HasAccessedInitialDocument();
-
-#if BUILDFLAG(IS_ANDROID)
-  void SetPrimaryMainFrameImportance(ChildProcessImportance importance);
-#endif
 
   // Returns the human-readable name for title in Media Controls.
   // If the returned value is an empty string, it means that there is no
@@ -630,6 +622,9 @@ class CONTENT_EXPORT WebContentsImpl
   void ActivateNearestFindResult(float x, float y) override;
   void RequestFindMatchRects(int current_version) override;
   service_manager::InterfaceProvider* GetJavaInterfaces() override;
+  ChildProcessImportance GetPrimaryMainFrameImportanceForTesting() override;
+  void SetPrimaryMainFrameImportance(
+      ChildProcessImportance importance) override;
 #endif
   bool HasRecentInteraction() override;
   [[nodiscard]] ScopedIgnoreInputEvents IgnoreInputEvents(
@@ -948,7 +943,7 @@ class CONTENT_EXPORT WebContentsImpl
   void OnFirstContentfulPaintInPrimaryMainFrame() override;
   gfx::NativeWindow GetOwnerNativeWindow() override;
 
-  media::PictureInPictureEventsInfo::AutoPipReason GetAutoPipReason()
+  media::PictureInPictureEventsInfo::AutoPipInfo GetAutoPipInfo()
       const override;
 
   // RenderViewHostDelegate ----------------------------------------------------
@@ -1329,6 +1324,12 @@ class CONTENT_EXPORT WebContentsImpl
       const WebContentsObserver::MediaPlayerInfo& media_info,
       const MediaPlayerId& id,
       WebContentsObserver::MediaStoppedReason reason);
+
+  // Called when the set of tracks changes.
+  void MediaMetadataChanged(
+      const WebContentsObserver::MediaPlayerInfo& media_info,
+      const MediaPlayerId& id);
+
   // This will be called before playback is started, check
   // GetCurrentlyPlayingVideoCount if you need this when playback starts.
   void MediaResized(const gfx::Size& size, const MediaPlayerId& id);
@@ -1347,7 +1348,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Called by MediaSessionImpl when one is created and initialized for this.
   void MediaSessionCreated(MediaSession* media_session);
 
-  int GetCurrentlyPlayingVideoCount() override;
+  int GetCurrentlyPlayingVideoCount() const override;
   std::optional<gfx::Size> GetFullscreenVideoSize() override;
 
   MediaWebContentsObserver* media_web_contents_observer() {
@@ -2569,7 +2570,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   bool showing_context_menu_;
 
-  int currently_playing_video_count_ = 0;
   base::flat_map<MediaPlayerId, gfx::Size> cached_video_sizes_;
 
   bool has_persistent_video_ = false;

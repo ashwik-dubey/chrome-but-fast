@@ -16,6 +16,7 @@ import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.supplier.Supplier;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
+import org.chromium.chrome.browser.bookmarks.BookmarkModel;
 import org.chromium.chrome.browser.bookmarks.TabBookmarker;
 import org.chromium.chrome.browser.collaboration.CollaborationServiceFactory;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -27,6 +28,7 @@ import org.chromium.chrome.browser.tab_group_sync.TabGroupSyncServiceFactory;
 import org.chromium.chrome.browser.tabmodel.TabClosureParams;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tabmodel.TabModel;
+import org.chromium.chrome.browser.tasks.tab_management.TabListEditorCoordinator.TabListEditorController;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.components.browser_ui.widget.BrowserUiListMenuUtils;
 import org.chromium.components.collaboration.CollaborationService;
@@ -36,6 +38,7 @@ import org.chromium.ui.widget.AnchoredPopupWindow.HorizontalOrientation;
 import org.chromium.ui.widget.RectProvider;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * A coordinator for the context menu in the tab switcher accessed by long-pressing on a tab. It is
@@ -46,10 +49,12 @@ public class TabSwitcherContextMenuCoordinator extends TabOverflowMenuCoordinato
     private static final String MENU_USER_ACTION_PREFIX = "TabSwitcher.ContextMenu";
     private final Activity mActivity;
     private final TabGroupModelFilter mTabGroupModelFilter;
+    private final BookmarkModel mBookmarkModel;
 
     TabSwitcherContextMenuCoordinator(
             Activity activity,
             TabBookmarker tabBookmarker,
+            Profile profile,
             TabGroupModelFilter tabGroupModelFilter,
             TabGroupListBottomSheetCoordinator tabGroupListBottomSheetCoordinator,
             TabGroupCreationDialogManager tabGroupCreationDialogManager,
@@ -72,6 +77,7 @@ public class TabSwitcherContextMenuCoordinator extends TabOverflowMenuCoordinato
                 activity);
         mActivity = activity;
         mTabGroupModelFilter = tabGroupModelFilter;
+        mBookmarkModel = BookmarkModel.getForProfile(profile);
     }
 
     /**
@@ -102,6 +108,7 @@ public class TabSwitcherContextMenuCoordinator extends TabOverflowMenuCoordinato
         return new TabSwitcherContextMenuCoordinator(
                 activity,
                 tabBookmarker,
+                profile,
                 tabGroupModelFilter,
                 tabGroupListBottomSheetCoordinator,
                 tabGroupCreationDialogManager,
@@ -126,7 +133,8 @@ public class TabSwitcherContextMenuCoordinator extends TabOverflowMenuCoordinato
                 /* verticalOverlapAnchor= */ false,
                 /* animStyle= */ R.style.TabSwitcherContextMenuAnimation,
                 HorizontalOrientation.LAYOUT_DIRECTION,
-                mActivity);
+                mActivity,
+                /* isIncognito= */ false);
         recordUserActionWithPrefix("Shown");
     }
 
@@ -157,11 +165,19 @@ public class TabSwitcherContextMenuCoordinator extends TabOverflowMenuCoordinato
             } else if (menuId == R.id.add_to_tab_group) {
                 coordinator.showBottomSheet(List.of(tab));
                 recordUserActionWithPrefix("AddToGroup");
+            } else if (menuId == R.id.edit_bookmark) {
+                tabBookmarker.addOrEditBookmark(tab);
+                recordUserActionWithPrefix("EditBookmark");
             } else if (menuId == R.id.add_to_bookmarks) {
                 tabBookmarker.addOrEditBookmark(tab);
-                recordUserActionWithPrefix("Bookmark");
+                recordUserActionWithPrefix("AddBookmark");
             } else if (menuId == R.id.select_tabs) {
                 tabListEditorManager.showTabListEditor();
+                TabListEditorController tabListEditorController =
+                        tabListEditorManager.getControllerSupplier().get();
+                if (tabListEditorController != null) {
+                    tabListEditorController.selectTabs(Set.of(tab.getId()));
+                }
                 recordUserActionWithPrefix("SelectTabs");
             } else if (menuId == R.id.close_tab) {
                 tabModel.getTabRemover()
@@ -190,11 +206,19 @@ public class TabSwitcherContextMenuCoordinator extends TabOverflowMenuCoordinato
                             R.drawable.ic_widgets));
         }
 
-        itemList.add(
-                BrowserUiListMenuUtils.buildMenuListItem(
-                        R.string.add_to_bookmarks,
-                        R.id.add_to_bookmarks,
-                        R.drawable.star_outline_24dp));
+        if (mBookmarkModel.hasBookmarkIdForTab(tab)) {
+            itemList.add(
+                    BrowserUiListMenuUtils.buildMenuListItem(
+                            R.string.edit_bookmark,
+                            R.id.edit_bookmark,
+                            R.drawable.btn_star_filled));
+        } else {
+            itemList.add(
+                    BrowserUiListMenuUtils.buildMenuListItem(
+                            R.string.add_to_bookmarks,
+                            R.id.add_to_bookmarks,
+                            R.drawable.star_outline_24dp));
+        }
 
         if (ShareUtils.shouldEnableShare(tab)) {
             itemList.add(

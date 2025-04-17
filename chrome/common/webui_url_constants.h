@@ -15,6 +15,7 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/strings/cstring_view.h"
+#include "build/android_buildflags.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "chrome/common/buildflags.h"
@@ -161,6 +162,7 @@ inline constexpr char kChromeUINetExportHost[] = "net-export";
 inline constexpr char kChromeUINetInternalsHost[] = "net-internals";
 inline constexpr char kChromeUINetInternalsURL[] = "chrome://net-internals/";
 inline constexpr char kChromeUINewTabHost[] = "newtab";
+inline constexpr char kChromeUINewTabFooterHost[] = "newtab-footer";
 inline constexpr char kChromeUINewTabPageHost[] = "new-tab-page";
 inline constexpr char kChromeUINewTabPageThirdPartyHost[] =
     "new-tab-page-third-party";
@@ -168,6 +170,7 @@ inline constexpr char kChromeUINewTabPageThirdPartyURL[] =
     "chrome://new-tab-page-third-party/";
 inline constexpr char kChromeUINewTabPageURL[] = "chrome://new-tab-page/";
 inline constexpr char kChromeUINewTabURL[] = "chrome://newtab/";
+inline constexpr char kChromeUINewTabFooterURL[] = "chrome://newtab-footer/";
 inline constexpr char kChromeUIUntrustedNtpMicrosoftAuthHost[] =
     "ntp-microsoft-auth";
 inline constexpr char kChromeUIUntrustedNtpMicrosoftAuthURL[] =
@@ -248,6 +251,8 @@ inline constexpr char kChromeUISignoutConfirmationURL[] =
     "chrome://signout-confirmation";
 #endif
 inline constexpr char kChromeUISiteEngagementHost[] = "site-engagement";
+inline constexpr char kChromeUISplitViewNewTabPageURL[] =
+    "chrome://tab-search.top-chrome/split_new_tab_page.html";
 inline constexpr char kChromeUISuggestInternalsHost[] = "suggest-internals";
 inline constexpr char kChromeUISuggestInternalsURL[] =
     "chrome://suggest-internals/";
@@ -519,7 +524,7 @@ inline constexpr char kChromeUIConnectorsInternalsHost[] =
 #endif
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_DESKTOP_ANDROID)
 inline constexpr char kChromeUIDiscardsHost[] = "discards";
 inline constexpr char kChromeUIDiscardsURL[] = "chrome://discards/";
 #endif

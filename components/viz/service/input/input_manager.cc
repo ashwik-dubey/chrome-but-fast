@@ -20,7 +20,6 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/android_input_receiver_compat.h"
-#include "base/debug/dump_without_crashing.h"
 #include "components/input/android/android_input_callback.h"
 #include "components/input/android/input_token_forwarder.h"
 #include "components/input/android/scoped_input_receiver.h"
@@ -45,7 +44,7 @@ namespace {
 void ForwardVizInputTransferToken(
     const input::ScopedInputTransferToken& viz_input_token,
     const gpu::SurfaceHandle& surface_handle) {
-  JNIEnv* env = base::android::AttachCurrentThread();
+  JNIEnv* env = jni_zero::AttachCurrentThread();
   base::android::ScopedJavaGlobalRef<jobject> viz_input_token_java(
       env, base::AndroidInputReceiverCompat::GetInstance()
                .AInputTransferToken_toJavaFn(
@@ -99,7 +98,10 @@ enum class CreateAndroidInputReceiverResult {
   kFailedNullCallbacks = 5,
   kSuccessfulButNullTransferToken = 6,
   kReuseExistingInputReceiver = 7,
-  kMaxValue = kReuseExistingInputReceiver,
+  kNullBrowserInputToken = 8,
+  kNotCreatingMoreThanOneReceiver = 9,
+  kRootCompositorFrameSinkDestroyed = 10,
+  kMaxValue = kRootCompositorFrameSinkDestroyed,
 };
 
 // These values are persisted to logs. Entries should not be renumbered and
@@ -133,7 +135,7 @@ std::unique_ptr<input::FlingSchedulerBase> InputManager::MakeFlingScheduler(
     input::RenderInputRouter* rir,
     const FrameSinkId& frame_sink_id) {
 #if BUILDFLAG(IS_ANDROID)
-  return std::make_unique<FlingSchedulerAndroid>(rir, this, frame_sink_id);
+  return std::make_unique<FlingSchedulerAndroid>(rir, frame_sink_id);
 #else
   NOTREACHED();
 #endif
@@ -443,7 +445,6 @@ void InputManager::StateOnTouchTransfer(
       UMA_HISTOGRAM_ENUMERATION(
           kStateProcessingResultHistogram,
           InputOnVizStateProcessingResult::kFrameSinkIdCorrespondsToChildView);
-      base::debug::DumpWithoutCrashing();
     }
   } else {
     UMA_HISTOGRAM_ENUMERATION(
@@ -530,7 +531,7 @@ bool InputManager::ReturnInputBackToBrowser() {
   if (!receiver_data_) {
     return false;
   }
-  JNIEnv* env = base::android::AttachCurrentThread();
+  JNIEnv* env = jni_zero::AttachCurrentThread();
   base::android::ScopedJavaGlobalRef<jobject> viz_input_token_java(
       env,
       base::AndroidInputReceiverCompat::GetInstance()
@@ -550,6 +551,17 @@ bool InputManager::ReturnInputBackToBrowser() {
   // `ReturnInputBackToBrowser` is only being called from Android specific
   // usecases currently with InputVizard.
   NOTREACHED();
+}
+
+void InputManager::SetBeginFrameSource(const FrameSinkId& frame_sink_id,
+                                       BeginFrameSource* begin_frame_source) {
+  // Return early if |frame_sink_id| is associated with non layer tree frame
+  // sink.
+  auto itr = rir_map_.find(frame_sink_id);
+  if (itr == rir_map_.end()) {
+    return;
+  }
+  itr->second->SetBeginFrameSourceForFlingScheduler(begin_frame_source);
 }
 
 void InputManager::MaybeRecreateRootRenderInputRouterSupports(
@@ -603,6 +615,16 @@ void InputManager::CreateOrReuseAndroidInputReceiver(
   if (receiver_data_ && receiver_data_->root_frame_sink_id().is_valid()) {
     // Only allow input receiver "creation" for single root compositor frame
     // sink.
+    UMA_HISTOGRAM_ENUMERATION(
+        kInputReceiverCreationResultHistogram,
+        CreateAndroidInputReceiverResult::kNotCreatingMoreThanOneReceiver);
+    return;
+  }
+
+  if (!frame_sink_manager_->IsFrameSinkIdInRootSinkMap(frame_sink_id)) {
+    UMA_HISTOGRAM_ENUMERATION(
+        kInputReceiverCreationResultHistogram,
+        CreateAndroidInputReceiverResult::kRootCompositorFrameSinkDestroyed);
     return;
   }
 
@@ -656,7 +678,15 @@ void InputManager::CreateOrReuseAndroidInputReceiver(
     return;
   }
 
-  CHECK(surface_record.host_input_token);
+  // TODO(crbug.com/409003682): Investigate in what scenarios Browser can send a
+  // null token.
+  if (!surface_record.host_input_token) {
+    UMA_HISTOGRAM_ENUMERATION(
+        kInputReceiverCreationResultHistogram,
+        CreateAndroidInputReceiverResult::kNullBrowserInputToken);
+    return;
+  }
+
   input::ScopedInputTransferToken browser_input_token(
       surface_record.host_input_token.obj());
   if (!browser_input_token) {
@@ -714,11 +744,6 @@ void InputManager::CreateOrReuseAndroidInputReceiver(
       parent_input_surface, input_surface, std::move(browser_input_token),
       std::move(android_input_callback), std::move(callbacks),
       std::move(receiver), std::move(viz_input_token));
-}
-
-BeginFrameSource* InputManager::GetBeginFrameSourceForFrameSink(
-    const FrameSinkId& id) {
-  return frame_sink_manager_->GetFrameSinkForId(id)->begin_frame_source();
 }
 
 bool InputManager::TransferInputBackToBrowser() {

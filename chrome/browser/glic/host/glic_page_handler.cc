@@ -18,6 +18,7 @@
 #include "base/timer/timer.h"
 #include "base/version_info/version_info.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/contextual_cueing/contextual_cueing_features.h"
 #include "chrome/browser/enterprise/browser_management/management_service_factory.h"
 #include "chrome/browser/glic/glic_enabling.h"
 #include "chrome/browser/glic/glic_hotkey.h"
@@ -288,6 +289,11 @@ class GlicWebClientHandler : public glic::mojom::WebClientHandler,
         base::BindRepeating(&GlicWebClientHandler::OnFocusedTabChanged,
                             base::Unretained(this)));
 
+    focus_data_changed_subscription_ =
+        glic_service_->AddFocusedTabDataChangedCallback(
+            base::BindRepeating(&GlicWebClientHandler::OnFocusedTabDataChanged,
+                                base::Unretained(this)));
+
     browser_attach_observation_ = ObserveBrowserForAttachment(profile_, this);
 
     system_permission_settings_observation_ =
@@ -325,6 +331,9 @@ class GlicWebClientHandler : public glic::mojom::WebClientHandler,
 #endif
 
     state->always_detached_mode = GlicWindowController::AlwaysDetached();
+
+    state->enable_zero_state_suggestions = base::FeatureList::IsEnabled(
+        contextual_cueing::kGlicZeroStateSuggestions);
 
     local_state_pref_change_registrar_.Init(g_browser_process->local_state());
     local_state_pref_change_registrar_.Add(
@@ -652,6 +661,21 @@ class GlicWebClientHandler : public glic::mojom::WebClientHandler,
     }
   }
 
+  void GetZeroStateSuggestionsForFocusedTab(
+      std::optional<bool> is_fre,
+      GetZeroStateSuggestionsForFocusedTabCallback callback) override {
+    if (!base::FeatureList::IsEnabled(
+            contextual_cueing::kGlicZeroStateSuggestions)) {
+      mojo::ReportBadMessage(
+          "Client should not call "
+          "GetZeroStateSuggestionsForFocusedTab "
+          "without the GlicZeroStateSuggestions feature enabled.");
+      return;
+    }
+    glic_service_->FetchZeroStateSuggestions(is_fre.value_or(false),
+                                             std::move(callback));
+  }
+
   void OnOsPermissionSettingChanged(ContentSettingsType content_type,
                                     bool is_blocked) {
     // Ignore other content types.
@@ -697,21 +721,16 @@ class GlicWebClientHandler : public glic::mojom::WebClientHandler,
   }
 
   void OnFocusedTabChanged(FocusedTabData focused_tab_data) {
-    focused_tab_data_observer_ = std::make_unique<TabDataObserver>(
-        focused_tab_data.focus(),
-        /*disconnect_on_primary_page_changed=*/true,
-        base::BindRepeating(&GlicWebClientHandler::FocusedTabDataChanged,
-                            base::Unretained(this)));
     web_client_->NotifyFocusedTabChanged(
         CreateFocusedTabData(focused_tab_data));
   }
 
-  void FocusedTabDataChanged(glic::mojom::TabDataPtr tab_data) {
+  void OnFocusedTabDataChanged(const glic::mojom::TabData* tab_data) {
     if (!tab_data) {
       return;
     }
     web_client_->NotifyFocusedTabChanged(
-        glic::mojom::FocusedTabData::NewFocusedTab(std::move(tab_data)));
+        glic::mojom::FocusedTabData::NewFocusedTab(tab_data->Clone()));
   }
 
   PrefChangeRegistrar pref_change_registrar_;
@@ -723,6 +742,7 @@ class GlicWebClientHandler : public glic::mojom::WebClientHandler,
   ActiveStateCalculator active_state_calculator_;
   BrowserIsOpenCalculator browser_is_open_calculator_;
   base::CallbackListSubscription focus_changed_subscription_;
+  base::CallbackListSubscription focus_data_changed_subscription_;
   std::unique_ptr<TabDataObserver> focused_tab_data_observer_;
   mojo::Receiver<glic::mojom::WebClientHandler> receiver_;
   mojo::Remote<glic::mojom::WebClient> web_client_;
@@ -797,11 +817,11 @@ void GlicPageHandler::ClosePanel() {
 }
 
 void GlicPageHandler::SignInAndClosePanel() {
-  GetGlicService()->GetAuthController().ShowReauthForAccount(
-      base::BindOnce(&GlicWindowController::ShowAfterSignIn,
-                     // Unretained is safe because the keyed service owns the
-                     // auth controller and the window controller.
-                     base::Unretained(&GetGlicService()->window_controller())));
+  GetGlicService()->GetAuthController().ShowReauthForAccount(base::BindOnce(
+      &GlicWindowController::ShowAfterSignIn,
+      // Unretained is safe because the keyed service owns the
+      // auth controller and the window controller.
+      base::Unretained(&GetGlicService()->window_controller()), nullptr));
   GetGlicService()->window_controller().Close();
 }
 

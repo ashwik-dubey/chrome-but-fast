@@ -131,7 +131,9 @@ class AccountMenuCoordinatorTest : public PlatformTest {
     coordinator_ = [[AccountMenuCoordinator alloc]
         initWithBaseViewController:nil
                            browser:browser_.get()
-                        anchorView:nil];
+                      contextStyle:SigninContextStyle::kDefault
+                        anchorView:nil
+                           fromWeb:NO];
     coordinator_.signinCompletion =
         ^(SigninCoordinatorResult, id<SystemIdentity>) {
           signinCompletion();
@@ -289,7 +291,7 @@ TEST_P(AccountMenuCoordinatorNonManagedTest, testSignOut) {
   OCMExpect([mock_snackbar_commands_handler_
       showSnackbarMessageOverBrowserToolbar:[OCMArg isNotNil]]);
   [coordinator_ signOutFromTargetRect:rect
-                           completion:^(BOOL success) {
+                           completion:^(BOOL success, SceneState* scene_state) {
                              EXPECT_TRUE(success);
                              assertOpenAndInterrupt();
                              closure.Run();
@@ -316,7 +318,7 @@ TEST_P(AccountMenuCoordinatorNonManagedTest, testTriggerSignout) {
   base::RepeatingClosure closure = run_loop.QuitClosure();
   CGRect rect = CGRect();
   [coordinator_ signOutFromTargetRect:rect
-                           completion:^(BOOL success) {
+                           completion:^(BOOL success, SceneState* scene_state) {
                              EXPECT_TRUE(success);
                              closure.Run();
                            }];

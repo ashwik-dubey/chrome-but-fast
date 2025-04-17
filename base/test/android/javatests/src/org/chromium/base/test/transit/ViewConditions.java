@@ -11,6 +11,8 @@ import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static org.hamcrest.CoreMatchers.allOf;
 import static org.hamcrest.CoreMatchers.any;
 
+import static org.chromium.build.NullUtil.assumeNonNull;
+
 import android.view.View;
 
 import androidx.test.espresso.AmbiguousViewMatcherException;
@@ -26,10 +28,13 @@ import org.hamcrest.StringDescription;
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.test.util.RawFailureHandler;
 import org.chromium.base.test.util.ViewPrinter;
+import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 
 import java.util.ArrayList;
 
 /** {@link Condition}s related to Android {@link View}s. */
+@NullMarked
 public class ViewConditions {
 
     private static final ViewPrinter.Options PRINT_SHALLOW_WITH_BOUNDS =
@@ -40,20 +45,26 @@ public class ViewConditions {
     private static final ViewPrinter.Options PRINT_SHALLOW =
             new ViewPrinter.Options().setPrintChildren(false).setPrintNonVisibleViews(true);
 
-    /** Fulfilled when a single matching View exists and is displayed. */
-    public static class DisplayedCondition extends ConditionWithResult<View> {
+    /**
+     * Fulfilled when a single matching View exists and is displayed.
+     *
+     * @param <ViewT> the type of the View.
+     */
+    public static class DisplayedCondition<ViewT extends View> extends ConditionWithResult<ViewT> {
         private final Matcher<View> mMatcher;
+        private final Class<ViewT> mViewClass;
         private final Options mOptions;
-        private View mViewMatched;
+        private @Nullable View mViewMatched;
         private int mPreviousViewX = Integer.MIN_VALUE;
         private int mPreviousViewY = Integer.MIN_VALUE;
         private int mPreviousViewWidth = Integer.MIN_VALUE;
         private int mPreviousViewHeight = Integer.MIN_VALUE;
         private long mLastChangeMs = -1;
 
-        public DisplayedCondition(Matcher<View> matcher, Options options) {
+        public DisplayedCondition(Matcher<View> matcher, Class<ViewT> viewClass, Options options) {
             super(/* isRunOnUiThread= */ false);
-            mMatcher = matcher /*, withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)*/;
+            mMatcher = matcher;
+            mViewClass = viewClass;
             mOptions = options;
         }
 
@@ -80,7 +91,7 @@ public class ViewConditions {
         }
 
         @Override
-        protected ConditionStatusWithResult<View> resolveWithSuppliers() {
+        protected ConditionStatusWithResult<ViewT> resolveWithSuppliers() {
             if (!ApplicationStatus.hasVisibleActivities()) {
                 return awaiting("No visible activities").withoutResult();
             }
@@ -113,6 +124,7 @@ public class ViewConditions {
             }
 
             // Assume found a View, or NoMatchingViewException would be thrown.
+            assumeNonNull(mViewMatched);
             boolean fulfilled = true;
             messages.add(ViewPrinter.describeView(mViewMatched, PRINT_SHALLOW_WITH_BOUNDS));
 
@@ -192,9 +204,21 @@ public class ViewConditions {
                 }
             }
 
+            ViewT typedView = null;
+            try {
+                typedView = mViewClass.cast(mViewMatched);
+            } catch (ClassCastException e) {
+                fulfilled = false;
+                messages.add(
+                        String.format(
+                                "Matched View was a %s which is not a %s",
+                                mViewMatched.getClass().getName(), mViewClass.getName()));
+            }
+
             String message = String.join("; ", messages);
             if (fulfilled) {
-                return fulfilled(message).withResult(mViewMatched);
+                assumeNonNull(typedView);
+                return fulfilled(message).withResult(typedView);
             } else {
                 return notFulfilled(message).withoutResult();
             }

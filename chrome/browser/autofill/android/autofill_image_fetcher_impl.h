@@ -23,13 +23,12 @@ class AutofillImageFetcherImpl : public AutofillImageFetcherBase,
   ~AutofillImageFetcherImpl() override;
 
   // AutofillImageFetcherBase:
-  void FetchImagesForURLs(
+  void FetchCreditCardArtImagesForURLs(
       base::span<const GURL> image_urls,
-      base::span<const AutofillImageFetcherBase::ImageSize> image_sizes,
-      base::OnceCallback<void(
-          const std::vector<std::unique_ptr<AutofillImage>>&)> callback_unused)
+      base::span<const AutofillImageFetcherBase::ImageSize> image_sizes)
       override;
-  void FetchPixAccountImages(base::span<const GURL> image_urls) override;
+  void FetchPixAccountImagesForURLs(base::span<const GURL> image_urls) override;
+  const gfx::Image* GetCachedImageForUrl(const GURL& image_url) const override;
   base::android::ScopedJavaLocalRef<jobject> GetOrCreateJavaImageFetcher()
       override;
 

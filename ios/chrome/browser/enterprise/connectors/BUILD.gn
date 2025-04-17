@@ -13,6 +13,7 @@ source_set("connectors") {
   ]
 
   deps = [
+    ":features",
     "//base",
     "//components/enterprise",
     "//components/enterprise/connectors/core",
@@ -34,9 +35,13 @@ source_set("interstitials") {
   deps = [
     "//components/enterprise/connectors/core",
     "//components/resources:components_resources_grit",
+    "//components/safe_browsing/core/browser:safe_browsing_metrics_collector",
     "//components/safe_browsing/core/browser/db:v4_protocol_manager_util",
+    "//components/safe_browsing/ios/browser:allow_list",
     "//components/security_interstitials/core",
+    "//ios/chrome/browser/safe_browsing/model",
     "//ios/chrome/browser/shared/model/application_context",
+    "//ios/chrome/browser/shared/model/profile",
     "//ios/components/security_interstitials",
     "//ui/base",
   ]
@@ -49,6 +54,8 @@ source_set("util") {
   ]
 
   deps = [
+    ":connectors",
+    ":features",
     "//base",
     "//components/enterprise",
     "//components/enterprise/common/proto:upload_request_response",
@@ -60,6 +67,15 @@ source_set("util") {
     "//ios/web/common:user_agent",
     "//ios/web/public",
   ]
+}
+
+source_set("features") {
+  sources = [
+    "features.h",
+    "features.mm",
+  ]
+
+  deps = [ "//base" ]
 }
 
 source_set("unit_tests") {
@@ -81,7 +97,9 @@ source_set("unit_tests") {
     "//components/policy/core/common:test_support",
     "//components/prefs:test_support",
     "//components/safe_browsing/core/common/proto:realtimeapi_proto",
+    "//components/safe_browsing/ios/browser:allow_list",
     "//components/security_interstitials/core",
+    "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/shared/model/profile/test",
     "//ios/web/public/test",
     "//ios/web/public/test/fakes",

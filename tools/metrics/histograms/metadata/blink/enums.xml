@@ -6103,6 +6103,19 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5476" label="CustomHighlightPseudoElement"/>
   <int value="5477" label="SpellingErrorPseudoElement"/>
   <int value="5478" label="GrammarErrorPseudoElement"/>
+  <int value="5479" label="SpeculationRulesTags"/>
+  <int value="5480" label="MLCreateContextGPUDevice"/>
+  <int value="5481" label="DisallowedSelectChild"/>
+  <int value="5482" label="DisallowedOptGroupChild"/>
+  <int value="5483" label="NonPhrasingContentOptionChild"/>
+  <int value="5484" label="InteractiveContentOptionChild"/>
+  <int value="5485" label="InteractiveContentLegendChild"/>
+  <int value="5486" label="PrivateAggregationApiErrorReporting"/>
+  <int value="5487" label="LanguageModel_Prompt_Input_Image"/>
+  <int value="5488" label="LanguageModel_Prompt_Input_Audio"/>
+  <int value="5489" label="Http3"/>
+  <int value="5490" label="CanvasReadbackNoise"/>
+  <int value="5491" label="CanvasReadbackNoiseMatchesHeuristics"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom:WebFeature) -->
@@ -6248,6 +6261,7 @@ Called by update_permissions_policy_enum.py.-->
   <int value="132" label="Rewriter"/>
   <int value="133" label="Translator"/>
   <int value="134" label="LanguageDetector"/>
+  <int value="135" label="DeviceAttributes"/>
 </enum>
 
 <enum name="FedCmAccountChooserResult">
@@ -7625,7 +7639,7 @@ Called by update_use_counter_css.py.-->
   <int value="805" label="text-wrap-mode"/>
   <int value="806" label="text-wrap-style"/>
   <int value="807" label="masonry-track"/>
-  <int value="808" label="masonry-slack"/>
+  <int value="808" label="item-tolerance"/>
   <int value="809" label="caret-animation"/>
   <int value="810" label="view-transition-capture-mode (obsolete)"/>
   <int value="811" label="interactivity"/>
@@ -7668,6 +7682,7 @@ Called by update_use_counter_css.py.-->
   <int value="848" label="print-color-adjust"/>
   <int value="849" label="column-height"/>
   <int value="850" label="column-wrap"/>
+  <int value="851" label="rule-color"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/public/mojom/use_counter/metrics/css_property_id.mojom:CSSSampleId) -->
@@ -8095,6 +8110,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="313" label="ReadingFlow"/>
   <int value="314" label="ComposedRanges"/>
   <int value="315" label="CompressionDictionaryTransport"/>
+  <int value="316" label="Http3"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/public/mojom/use_counter/metrics/webdx_feature.mojom:WebDXFeature) -->

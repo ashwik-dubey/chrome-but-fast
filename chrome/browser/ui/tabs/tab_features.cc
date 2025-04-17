@@ -35,6 +35,7 @@
 #include "chrome/browser/ui/lens/lens_search_controller.h"
 #include "chrome/browser/ui/page_action/page_action_icon_type.h"
 #include "chrome/browser/ui/performance_controls/memory_saver_chip_controller.h"
+#include "chrome/browser/ui/tabs/inactive_window_mouse_event_controller.h"
 #include "chrome/browser/ui/tabs/public/tab_dialog_manager.h"
 #include "chrome/browser/ui/tabs/saved_tab_groups/collaboration_messaging_tab_data.h"
 #include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_utils.h"
@@ -45,15 +46,18 @@
 #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
 #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_translate_action_listener.h"
 #include "chrome/browser/ui/ui_features.h"
+#include "chrome/browser/ui/views/commerce/price_insights_page_action_view_controller.h"
+#include "chrome/browser/ui/views/file_system_access/file_system_access_page_action_controller.h"
 #include "chrome/browser/ui/views/intent_picker/intent_picker_view_page_action_controller.h"
 #include "chrome/browser/ui/views/page_action/action_ids.h"
 #include "chrome/browser/ui/views/page_action/page_action_controller.h"
-#include "chrome/browser/ui/views/page_action/page_action_properties.h"
+#include "chrome/browser/ui/views/page_action/page_action_properties_provider.h"
 #include "chrome/browser/ui/views/side_panel/customize_chrome/side_panel_controller_views.h"
 #include "chrome/browser/ui/views/side_panel/extensions/extension_side_panel_manager.h"
 #include "chrome/browser/ui/views/side_panel/read_anything/read_anything_side_panel_controller.h"
 #include "chrome/browser/ui/views/translate/translate_page_action_controller.h"
 #include "chrome/browser/ui/views/zoom/zoom_view_controller.h"
+#include "chrome/browser/ui/web_applications/pwa_install_page_action.h"
 #include "chrome/browser/ui/webui/webui_embedding_context.h"
 #include "chrome/browser/web_applications/web_app_tab_helper.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
@@ -204,11 +208,12 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
     CHECK(pinned_actions_model);
     page_action_controller_ =
         std::make_unique<page_actions::PageActionController>(
-            page_actions::GetPageActionControllerProperties(),
             pinned_actions_model);
     page_action_controller_->Initialize(
-        tab, std::vector<actions::ActionId>(page_actions::kActionIds.begin(),
-                                            page_actions::kActionIds.end()));
+        tab,
+        std::vector<actions::ActionId>(page_actions::kActionIds.begin(),
+                                       page_actions::kActionIds.end()),
+        page_actions::PageActionPropertiesProvider());
 
     if (IsPageActionMigrated(PageActionIconType::kTranslate)) {
       translate_page_action_controller_ =
@@ -226,8 +231,24 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
           std::make_unique<IntentPickerViewPageActionController>(tab);
     }
 
+    if (IsPageActionMigrated(PageActionIconType::kFileSystemAccess)) {
+      file_system_access_page_action_controller_ =
+          std::make_unique<FileSystemAccessPageActionController>(tab);
+    }
+
     if (IsPageActionMigrated(PageActionIconType::kZoom)) {
       zoom_view_controller_ = std::make_unique<zoom::ZoomViewController>(tab);
+    }
+
+    if (IsPageActionMigrated(PageActionIconType::kPwaInstall)) {
+      pwa_install_page_action_controller_ =
+          std::make_unique<PwaInstallPageActionController>(tab);
+    }
+
+    if (IsPageActionMigrated(PageActionIconType::kPriceInsights)) {
+      commerce_price_insights_page_action_view_controller_ =
+          std::make_unique<commerce::PriceInsightsPageActionViewController>(
+              tab);
     }
   }
 
@@ -283,6 +304,12 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
           favicon::ContentFaviconDriver::FromWebContents(tab.GetContents()));
 
   task_manager::WebContentsTags::CreateForTabContents(tab.GetContents());
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
+  inactive_window_mouse_event_controller_ =
+      std::make_unique<InactiveWindowMouseEventController>();
+#endif
 }
 
 TabFeatures::TabFeatures() = default;

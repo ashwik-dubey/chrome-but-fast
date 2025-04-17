@@ -79,6 +79,7 @@ class InteractiveGlicTestT : public T {
     features_.InitWithFeaturesAndParameters(
         {{features::kGlic, glic_params},
          {features::kTabstripComboButton, {}},
+         {features::kGlicRollout, {}},
          {features::kGlicKeyboardShortcutNewBadge, {}}},
         {});
   }
@@ -110,6 +111,9 @@ class InteractiveGlicTestT : public T {
     Test::embedded_test_server()->ServeFilesFromDirectory(
         base::PathService::CheckedGet(base::DIR_ASSETS)
             .AppendASCII("gen/chrome/test/data/webui/glic/"));
+
+    Test::embedded_test_server()->ServeFilesFromSourceDirectory(
+        "chrome/test/data/webui/glic/");
 
     ASSERT_TRUE(Test::embedded_test_server()->Start());
 

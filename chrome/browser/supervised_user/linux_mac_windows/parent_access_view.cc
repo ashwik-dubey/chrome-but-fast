@@ -36,8 +36,7 @@
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/box_layout_view.h"
-#include "ui/views/layout/flex_layout.h"
-#include "ui/views/layout/flex_layout_view.h"
+#include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/layout_types.h"
 #include "ui/views/style/typography.h"
 #include "ui/views/view.h"
@@ -50,11 +49,12 @@
 namespace {
 
 constexpr int kViewWidth = 448;
-constexpr int kViewHeight = 440;
+constexpr int kViewHeight = 390;
+constexpr int kErrorViewHeight = 376;
 constexpr int kMaxWebViewHeight = 540;
 constexpr gfx::Size kViewPreferredSize = gfx::Size(kViewWidth, kViewHeight);
 constexpr gfx::Size kErrorViewPreferredSize =
-    gfx::Size(kViewWidth, kViewHeight);
+    gfx::Size(kViewWidth, kErrorViewHeight);
 
 const GURL GetPacpUrl(
     const GURL& blocked_url,
@@ -152,7 +152,8 @@ base::WeakPtr<ParentAccessView> ParentAccessView::ShowParentAccessDialog(
   dialog_delegate->SetModalType(/*modal_type=*/ui::mojom::ModalType::kWindow);
   dialog_delegate->SetShowCloseButton(
       /*show_close_button=*/true);
-  dialog_delegate->SetOwnedByWidget(/*delete_self=*/true);
+  dialog_delegate->SetOwnedByWidget(
+      views::WidgetDelegate::OwnedByWidgetPassKey());
   dialog_delegate->SetAccessibleTitle(
       l10n_util::GetStringUTF16(IDS_PARENT_WEBSITE_APPROVAL_DIALOG_A11Y_NAME));
 
@@ -177,7 +178,7 @@ base::WeakPtr<ParentAccessView> ParentAccessView::ShowParentAccessDialog(
   view_weak_ptr->widget_observations_.AddObservation(widget);
 
   // Border must be set only after the widget has been created.
-  view_weak_ptr->UpdateDialogBorder();
+  view_weak_ptr->UpdateDialogBorderAndChildrenBackgroundColors();
 
   // Starts observing the new dialog contents that have been created in
   // `Initialize`.
@@ -205,7 +206,7 @@ void ParentAccessView::OnWidgetClosing(views::Widget* widget) {
 }
 
 void ParentAccessView::OnWidgetThemeChanged(views::Widget*) {
-  UpdateDialogBorder();
+  UpdateDialogBorderAndChildrenBackgroundColors();
 }
 
 void ParentAccessView::CloseView() {
@@ -268,6 +269,12 @@ void ParentAccessView::DisplayErrorMessage(content::WebContents* web_contents) {
     std::move(dialog_result_reset_callback_).Run();
   }
 
+  if (!base::FeatureList::IsEnabled(
+          supervised_user::kEnableLocalWebApprovalErrorDialog)) {
+    CloseView();
+    return;
+  }
+
   // Remove the web view that displays the PACP widget content, and replace it
   // with a view that displays the error message.
   // Assume ownership of the removed view but do not destruct yet,
@@ -299,13 +306,23 @@ void ParentAccessView::DisplayErrorMessage(content::WebContents* web_contents) {
   error_view->SetLayoutManager(std::move(layout));
 
   // Add error icon.
-  int top_margin = 60;
   auto error_icon_view =
       std::make_unique<views::ImageView>(ui::ImageModel::FromVectorIcon(
           vector_icons::kErrorOutlineIcon, ui::kColorAlertHighSeverity,
           gfx::GetDefaultSizeOfVectorIcon(vector_icons::kErrorOutlineIcon)));
-  error_view->SetProperty(views::kMarginsKey,
-                          gfx::Insets().set_top(top_margin));
+  // Spec required the margin to be 60 px from the the top, from which we
+  // subtract the additional space taken by the dialog border displaying the "X"
+  // button.
+  int top_margin = 60;
+  int visible_border_height = widget->widget_delegate()
+                                  ->AsDialogDelegate()
+                                  ->GetBubbleFrameView()
+                                  ->GetBorder()
+                                  ->GetInsets()
+                                  .height();
+  top_margin -= visible_border_height;
+  error_icon_view->SetProperty(views::kMarginsKey,
+                               gfx::Insets().set_top(top_margin));
   error_view->AddChildView(std::move(error_icon_view));
 
   // Add title.
@@ -356,6 +373,8 @@ void ParentAccessView::DisplayErrorMessage(content::WebContents* web_contents) {
   error_view_ = AddChildView(std::move(error_view));
   // Triggers the dialog resizing.
   error_view_->SetPreferredSize(kErrorViewPreferredSize);
+
+  UpdateDialogBorderAndChildrenBackgroundColors();
   widget->Show();
 
   if (removed_view_holder_ && removed_view_holder_->GetVisible()) {
@@ -372,11 +391,9 @@ content::WebContents* ParentAccessView::GetWebViewContents() {
 }
 
 void ParentAccessView::Initialize(const GURL& pacp_url, int corner_radius) {
-  auto layout = std::make_unique<views::FlexLayout>();
-  layout->SetOrientation(views::LayoutOrientation::kHorizontal);
-  layout->SetMainAxisAlignment(views::LayoutAlignment::kCenter);
-  layout->SetCrossAxisAlignment(views::LayoutAlignment::kStretch);
-  SetLayoutManager(std::move(layout));
+  // A FillLayout is enough as the dialog only displays a child view at a time
+  // (web_view_ or error_view_).
+  SetLayoutManager(std::make_unique<views::FillLayout>());
 
   // Loads the PACP widget's url. This creates the new web_contents of the
   // dialog.
@@ -414,14 +431,30 @@ void ParentAccessView::ShowNativeView() {
   web_view_->RequestFocus();
 }
 
-void ParentAccessView::UpdateDialogBorder() {
+void ParentAccessView::UpdateDialogBorderAndChildrenBackgroundColors() {
+  views::View* displayed_child_view = error_view_ ? error_view_ : web_view_;
+  CHECK(displayed_child_view);
   auto* widget = GetWidget();
   CHECK(widget);
   CHECK(widget->widget_delegate()->AsDialogDelegate()->GetBubbleFrameView());
-
   auto border = std::make_unique<views::BubbleBorder>(
       views::BubbleBorder::NONE, views::BubbleBorder::DIALOG_SHADOW);
-  border->SetColor(kColorParentAccessViewLocalWebApprovalBackground);
+
+  if (displayed_child_view == web_view_) {
+    // The background color of the view needs to match the fixed webview's
+    // content background.
+    auto background_color = kColorParentAccessViewLocalWebApprovalBackground;
+    border->SetColor(background_color);
+    SetBackground(
+        views::CreateRoundedRectBackground(background_color, corner_radius_));
+    web_view_->SetBackground(
+        views::CreateRoundedRectBackground(background_color, corner_radius_));
+  } else {
+    // For the error view case, remove any solid backgrounds to go with the
+    // default look.
+    SetBackground(nullptr);
+  }
+
   border->SetCornerRadius(corner_radius_);
   widget->widget_delegate()
       ->AsDialogDelegate()

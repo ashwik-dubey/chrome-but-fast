@@ -91,6 +91,9 @@ void OnTaskSessionManager::OnSessionEnded(const std::string& session_id) {
   if (const SessionID window_id =
           system_web_app_manager_->GetActiveSystemWebAppWindowID();
       window_id.is_valid()) {
+    // Unlock SWA window before closing it to ensure we restore things like
+    // global accelerators, etc.
+    LockOrUnlockWindow(/*lock_window=*/false);
     system_web_app_manager_->CloseSystemWebAppWindow(window_id);
   }
   active_session_id_ = std::nullopt;
@@ -281,7 +284,9 @@ void OnTaskSessionManager::OnAppReloaded() {
   }
 
   // Also lock window if necessary.
-  LockOrUnlockWindow(should_lock_window_);
+  if (!lock_in_progress_) {
+    LockOrUnlockWindow(should_lock_window_);
+  }
 }
 
 void OnTaskSessionManager::LockOrUnlockWindow(bool lock_window) {

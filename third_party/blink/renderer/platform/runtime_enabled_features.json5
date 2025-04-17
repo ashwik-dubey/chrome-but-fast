@@ -292,6 +292,11 @@
       implied_by: ["Fledge", "Parakeet"],
       public: true,
     },
+    // Fix for crbug.com/403358869
+    {
+      name: "AdjustDOMOffsetToLayoutOffsetForSecureText",
+      status: "stable",
+    },
     // Adjust the end of the next paragraph if the end position for the
     // paragraph is updated while moving the paragraph. See
     // https://crbug.com/329121649
@@ -389,6 +394,10 @@
       // https://crbug.com/40681200
       name: "AllowSkippingEditingBoundaryToMergeEnd",
       status: "stable",
+    },
+    {
+      name: "AllowSvgUseToReferenceExternalDocumentRoot",
+      status: "experimental",
     },
     {
       name: "AllowSyntheticTimingForCanvasCapture",
@@ -655,11 +664,6 @@
       ]
     },
     {
-      // Enables bypassing CSP checks when we consume a preload.
-      // https://crbug.com/348442535
-      name: "BypassCSPForPreloads",
-    },
-    {
       // Bypasses the enforcement of the Page Embedded Permission Control
       // security checks. This flag is disabled by default and should only be
       // enabled in automated tests in order to allow them to avoid needing to
@@ -727,12 +731,6 @@
       base_feature: "none",
     },
     {
-      // This allows testing the canvas noise interventions in tests (which in
-      // most cases don't have a CPU). In practice the interventions are only
-      // enabled for GPU-rendered canvases.
-      name: "CanvasInterventionsOnCpuForTesting",
-    },
-    {
       // https://github.com/Igalia/explainers/blob/main/canvas-formatted-text/html-in-canvas.md
       name: "CanvasPlaceElement",
       status: "experimental",
@@ -777,7 +775,7 @@
     },
     {
       name: "CapturedSurfaceResolution",
-      status: { "Win": "stable", "Mac": "stable", "default": ""},
+      status: { "Win": "stable", "Mac": "stable", "ChromeOS": "experimental", "default": ""},
     },
     {
       name: "CaptureHandle",
@@ -787,6 +785,13 @@
     {
       // https://www.w3.org/TR/cssom-view-1/#dom-document-caretpositionfrompoint
       name: "CaretPositionFromPoint",
+      status: "stable",
+    },
+    {
+      // Changes the caret's affinity to upstream, preventing spaces
+      // from appearing in the previous line when typing at the start
+      // of a wrapped line. See https://crbug.com/40677155
+      name: "CaretWithTextAffinityUpstream",
       status: "stable",
     },
     {
@@ -1150,21 +1155,21 @@
       // queries support in conditions.
       // https://drafts.csswg.org/css-values-5/#if-notation.
       name: "CSSInlineIfForMediaQueries",
-      status: "experimental",
+      status: "stable",
     },
     {
       // CSS if() function for custom properties. Flag is used only for style
       // queries support in conditions.
       // https://drafts.csswg.org/css-values-5/#if-notation.
       name: "CSSInlineIfForStyleQueries",
-      status: "experimental",
+      status: "stable",
     },
     {
       // CSS if() function for custom properties. Flag is used only for supports
       // queries support in conditions.
       // https://drafts.csswg.org/css-values-5/#if-notation.
       name: "CSSInlineIfForSupportsQueries",
-      status: "experimental",
+      status: "stable",
     },
     {
       // https://chromestatus.com/feature/6289894144212992
@@ -1383,8 +1388,12 @@
     },
     {
       name: "CSSShapeFunctionCompositeAnimation",
-      status: "experimental",
+      status: "stable",
       depends_on: ["CSSShapeFunction", "CompositeClipPathAnimation"]
+    },
+    {
+      name: "CSSShapeFunctionOffsetPath",
+      status: "stable",
     },
     {
       // sibling-index() and sibling-count()
@@ -1460,15 +1469,15 @@
       status: "experimental",
     },
     {
-      // https://chromestatus.com/feature/5064894363992064
+      // https://chromestatus.com/feature/4850737974345728
       name: "CSSViewTransitionAutoName",
       status: "experimental",
       depends_on: ["CSSViewTransitionMatchElement"],
     },
     {
-      // https://chromestatus.com/feature/5064894363992064
+      // https://chromestatus.com/feature/5098745710247936
       name: "CSSViewTransitionMatchElement",
-      status: "experimental"
+      status: "stable"
     },
     {
       // Adds the appearance:base-select CSS value which makes <select>
@@ -1526,6 +1535,10 @@
         "ChromeOS": "stable",
         "default": "experimental",
       },
+    },
+    {
+      name: "DeviceAttributesPermissionPolicy",
+      status: "experimental",
     },
     {
       name: "DeviceBoundSessionCredentials",
@@ -1750,9 +1763,7 @@
     // IncludeJSCallStacksInCrashReports. https://chromestatus.com/feature/4731248572628992
     {
       name: "DocumentPolicyIncludeJSCallStacksInCrashReports",
-      status: "experimental",
-      base_feature_status: "enabled",
-      copied_from_base_feature_if: "overridden",
+      status: "stable",
     },
     {
       name: "DocumentPolicyNegotiation",
@@ -1788,18 +1799,13 @@
     // controls visibility.
     {
       name: "DynamicSafeAreaInsets",
+      status: {"Android": "stable"},
     },
     // Dynamically change the safe area insets as browser controls scrolls.
     {
       name: "DynamicSafeAreaInsetsOnScroll",
-      depends_on: ["DynamicSafeAreaInsets"]
-    },
-    {
-      // Fix for https://crbug.com/40821646. When enabled, it prevents
-      // returning empty position when the position's anchor node is not
-      // a descendant of the anchor's highest editable root.
-      name: "EditableBoundaryAdjustment",
-      status: "stable",
+      depends_on: ["DynamicSafeAreaInsets"],
+      status: {"Android": "stable"},
     },
     {
       name: "ElementCapture",
@@ -1816,7 +1822,7 @@
     {
       //See: crbug.com/40771555
       name: "EnterInOpenShadowRoots",
-      status: "stable",
+      status: "test",
     },
     {
       // Experiment with preventing some instances of mutation XSS
@@ -1906,6 +1912,13 @@
       name: "FedCm",
       public: true,
       status: "stable",
+      base_feature: "none",
+    },
+    {
+      name: "FedCmAutofill",
+      implied_by: ["FedCmDelegation"],
+      public: true,
+      status: "test",
       base_feature: "none",
     },
     {
@@ -2087,6 +2100,11 @@
     {
       // crbug.com/408309951
       name: "FindNestedAnnotationFix",
+      status: "stable",
+    },
+    {
+      // crbug.com/409358630
+      name: "FindOrphanAnnotationFix",
       status: "stable",
     },
     {
@@ -3421,6 +3439,15 @@
       // Used to allow preloading data: URLs with link rel=preload.
       // https://crbug.com/348442535
       name: "PreloadLinkRelDataUrls",
+      status: "experimental",
+    },
+    {
+      // This flag changes the UA stylesheet to make some elements use
+      // margin-block instead of margin-top/margin-bottom in order to match the
+      // HTML spec and firefox. Shipping in M137.
+      // https://issues.chromium.org/issues/407315792
+      name: "PreLogicalMargin",
+      status: "stable",
     },
     {
       // Used to allow chrome://flags to turn off prerendering. (Without using
@@ -3552,10 +3579,6 @@
       base_feature: "none",
     },
     {
-      name: "QuickIntensiveWakeUpThrottlingAfterLoading",
-      status: "stable",
-    },
-    {
      // crbug.com/323953913
      // Fix looking for next radio button in the form's scope. This was added
      // in M135 and can be removed after M138.
@@ -3579,6 +3602,13 @@
     {
       name: "ReduceAcceptLanguage",
       base_feature: "none",
+    },
+    {
+      // If enabled, the screen sizes reported through the `Screen` interface
+      // will be limited to the size of the viewport unless Window Management
+      // permission has been granted.
+      name: "ReduceScreenSize",
+      settable_from_internals: true,
     },
     {
       // If enabled, the deviceModel will be reduced to "K" and the
@@ -3610,6 +3640,15 @@
     {
       name: "RegionCapture",
       status: {"Android": "", "default": "stable"},
+    },
+    {
+      name: "RelatedWebsitePartitionAPI",
+      base_feature: "none",
+
+      // No status because this blink runtime feature doesn't work by itself.
+      // It's controlled by the corresponding Chromium feature,
+      // net::features::kRelatedWebsitePartitionAPI, which needs to be
+      // enabled to make the whole feature work.
     },
     {
       name: "RelOpenerBcgDependencyHint",
@@ -3851,6 +3890,10 @@
     },
     {
       // https://wicg.github.io/webcomponents/proposals/Scoped-Custom-Element-Registries
+      // https://github.com/whatwg/html/issues/10854
+      // Spec PRs:
+      // https://github.com/whatwg/html/pull/10869
+      // https://github.com/whatwg/dom/pull/1341
       name: "ScopedCustomElementRegistry",
       status: "experimental",
     },
@@ -4182,6 +4225,10 @@
       status: "experimental",
     },
     {
+      name: "SkipLineBreakItemWhenIsCollapsed",
+      status: "stable",
+    },
+    {
       // If enabled, HTMLPreloadScanner will be skipped.
       name: "SkipPreloadScanning",
       origin_trial_feature_name: "SkipPreloadScanning",
@@ -4229,6 +4276,13 @@
     },
     {
       name: "SoftNavigationHeuristicsExposeFPAndFCP",
+    },
+    {
+      // Whether spatial navigation should use cursor inheritance to exclude
+      // nodes where cursor is inherited. Kill-switch that can be remove once
+      // the change goes through a stable release.
+      name: "SpatNavUsesCursorInheritance",
+      status: "stable",
     },
     {
       name: "SpeakerSelection",
@@ -4365,6 +4419,10 @@
       status: "stable",
     },
     {
+      name: "SvgTransformOnNestedSvgElement",
+      status: "experimental",
+    },
+    {
       name: "SynthesizedKeyboardEventsForAccessibilityActions",
       status: "experimental",
     },
@@ -4436,6 +4494,11 @@
     // For unit tests.
     {
       name: "TestFeatureStable",
+      status: "stable",
+    },
+    {
+      // killswitch for fix in M137
+      name: "TextareaStableResizing",
       status: "stable",
     },
     {
@@ -4591,6 +4654,12 @@
       name: "TranslationAPIV1",
       status: "test",
       copied_from_base_feature_if: "overridden",
+    },
+    {
+      // Ensures symbols are treated as word boundaries during traversal.
+      // See https://crbug.com/40252642
+      name: "TreatSymbolsAsWordBoundary",
+      status: "stable",
     },
     {
       name: "TrustedTypeBeforePolicyCreationEvent",
@@ -4887,7 +4956,7 @@
     // https://crbug.com/41484826
     {
       name: "WebAuthenticationAlignErrorTypeForPaymentCredentialCreate",
-      status: "experimental",
+      status: "stable",
     },
     // Prototyping https://github.com/w3c/webauthn/issues/2144
     {
@@ -5000,7 +5069,7 @@
     },
     {
       name: "WebCodecsOrientation",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "WebCodecsVideoEncoderBuffers",
@@ -5012,7 +5081,7 @@
     },
     {
       name: "WebCryptoEd25519",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "WebFontResizeLCP",
@@ -5042,6 +5111,10 @@
     },
     {
       name: "WebGPUAdapterInfoIsFallbackAdapter",
+      status: "stable",
+    },
+    {
+      name: "WebGPUCopyBufferToBufferOverload",
       status: "stable",
     },
     {
@@ -5201,6 +5274,12 @@
       public: true,
       status: "stable",
       base_feature: "none",
+    },
+    {
+      name: "WebXRDepthPerformance",
+      depends_on: ["WebXR"],
+      public: true,
+      status: "experimental",
     },
     {
       name: "WebXREnabledFeatures",

@@ -44,6 +44,21 @@ AuthController::AuthController(Profile* profile,
 
 AuthController::~AuthController() = default;
 
+bool AuthController::CheckAuthBeforeShowSync(base::OnceClosure after_signin) {
+  if (IsAutomationEnabled()) {
+    return true;
+  }
+  switch (GetTokenState()) {
+    case TokenState::kRequiresSignIn:
+      ShowReauthForAccount(std::move(after_signin));
+      return false;
+    case TokenState::kUnknownError:
+    case TokenState::kOk:
+    default:
+      return true;
+  }
+}
+
 void AuthController::CheckAuthBeforeLoad(
     base::OnceCallback<void(mojom::PrepareForClientResult)> callback) {
   // If automation is enabled skip auth check.
@@ -224,6 +239,10 @@ void AuthController::ShowReauthForAccount(base::OnceClosure after_signin) {
 
 void AuthController::OnGlicWindowOpened() {
   after_signin_callback_.Reset();
+}
+
+bool AuthController::RequiresSignIn() const {
+  return GetTokenState() == TokenState::kRequiresSignIn;
 }
 
 void AuthController::CookieSyncBeforeLoadDone(

@@ -33,7 +33,6 @@ using enum PrivacySandboxService::AdsDialogCallbackNoArgsEvents;
 
 constexpr int kM1DialogWidth = 600;
 constexpr int kDefaultDialogHeight = 494;
-constexpr int kMinRequiredDialogHeight = 100;
 
 GURL GetDialogURL(PrivacySandboxService::PromptType prompt_type) {
   GURL base_url = GURL(chrome::kChromeUIPrivacySandboxDialogURL);
@@ -84,22 +83,13 @@ class PrivacySandboxDialogDelegate : public views::DialogDelegate {
 }  // namespace
 
 // static
-bool CanWindowHeightFitPrivacySandboxPrompt(Browser* browser) {
-  const int max_dialog_height = browser->window()
-                                    ->GetWebContentsModalDialogHost()
-                                    ->GetMaximumDialogSize()
-                                    .height();
-  return max_dialog_height >= kMinRequiredDialogHeight;
-}
-
-// static
-void ShowPrivacySandboxDialog(Browser* browser,
-                              PrivacySandboxService::PromptType prompt_type) {
+void PrivacySandboxDialog::Show(Browser* browser,
+                                PrivacySandboxService::PromptType prompt_type) {
   auto delegate = std::make_unique<PrivacySandboxDialogDelegate>(browser);
   delegate->SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
   delegate->SetModalType(ui::mojom::ModalType::kWindow);
   delegate->SetShowCloseButton(false);
-  delegate->SetOwnedByWidget(true);
+  delegate->SetOwnedByWidget(views::WidgetDelegate::OwnedByWidgetPassKey());
 
   delegate->SetContentsView(
       std::make_unique<PrivacySandboxDialogView>(browser, prompt_type));

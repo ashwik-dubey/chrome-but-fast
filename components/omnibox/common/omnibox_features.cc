@@ -135,12 +135,6 @@ BASE_FEATURE(kZeroSuggestPrefetchingOnWeb,
              "ZeroSuggestPrefetchingOnWeb",
              DISABLED);
 
-// Enables fullfillment of contextual zero-prefix suggestions by delegating the
-// logic to Lens.
-BASE_FEATURE(kContextualZeroSuggestLensFulfillment,
-             "ContextualZeroSuggestLensFulfillment",
-             DISABLED);
-
 // Features to provide head and tail non personalized search suggestion from
 // compact on device models. More specifically, feature name with suffix
 // Incognito / NonIncognito  will only controls behaviors under incognito /
@@ -155,9 +149,9 @@ BASE_FEATURE(kOnDeviceHeadProviderKorean,
              "OmniboxOnDeviceHeadProviderKorean",
              DISABLED);
 BASE_FEATURE(kOnDeviceTailModel, "OmniboxOnDeviceTailModel", DISABLED);
-BASE_FEATURE(kDisableOnDeviceTailEnglishModel,
-             "OmniboxDisableOnDeviceTailEnglishModel",
-             DISABLED);
+BASE_FEATURE(kOnDeviceTailEnableEnglishModel,
+             "OmniboxOnDeviceTailEnableEnglishModel",
+             ENABLED);
 
 // If enabled, the relevant AutocompleteProviders will store "title" data in
 // AutocompleteMatch::contents and "URL" data in AutocompleteMatch::description
@@ -332,9 +326,6 @@ BASE_FEATURE(kStarterPackExpansion,
 // users to certain starter pack engines.
 BASE_FEATURE(kStarterPackIPH, "StarterPackIPH", DISABLED);
 
-// Enables the @page starter pack scope.
-BASE_FEATURE(kStarterPackPage, "StarterPackPage", DISABLED);
-
 // If enabled, |SearchProvider| will not function in Zero Suggest.
 BASE_FEATURE(kAblateSearchProviderWarmup,
              "AblateSearchProviderWarmup",
@@ -355,7 +346,9 @@ BASE_FEATURE(kUseFusedLocationProvider, "UseFusedLocationProvider", ENABLED);
 BASE_FEATURE(kOmniboxShortcutsAndroid, "OmniboxShortcutsAndroid", ENABLED);
 
 // When enabled, it increases ipad's zps matches limit on web,srp and ntp.
-BASE_FEATURE(kIpadZeroSuggestMatches, "IpadZeroSuggestMatches", DISABLED);
+BASE_FEATURE(kIpadZeroSuggestMatches,
+             "IpadZeroSuggestMatches",
+             enable_if(IS_IOS));
 
 // The features below allow tuning number of suggestions offered to users in
 // specific contexts. These features are default enabled and are used to control

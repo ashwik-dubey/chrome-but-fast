@@ -4862,6 +4862,19 @@ enum WebFeature {
   kCustomHighlightPseudoElement = 5476,
   kSpellingErrorPseudoElement = 5477,
   kGrammarErrorPseudoElement = 5478,
+  kSpeculationRulesTags = 5479,
+  kMLCreateContextGPUDevice = 5480,
+  kDisallowedSelectChild = 5481,
+  kDisallowedOptGroupChild = 5482,
+  kNonPhrasingContentOptionChild = 5483,
+  kInteractiveContentOptionChild = 5484,
+  kInteractiveContentLegendChild = 5485,
+  kPrivateAggregationApiErrorReporting = 5486,
+  kLanguageModel_Prompt_Input_Image = 5487,
+  kLanguageModel_Prompt_Input_Audio = 5488,
+  kHttp3 = 5489,
+  kCanvasReadbackNoise = 5490,
+  kCanvasReadbackNoiseMatchesHeuristics = 5491,
 
   // Add new features immediately above this line. Don't change assigned
   // numbers of any item, and don't reuse removed slots. Also don't add extra

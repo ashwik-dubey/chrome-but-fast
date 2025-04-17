@@ -4,6 +4,8 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
+import static org.chromium.chrome.browser.tasks.tab_management.TabGridDialogProperties.PAGE_KEY_LISTENER;
+
 import android.app.Activity;
 import android.content.res.Resources;
 import android.graphics.Rect;
@@ -34,6 +36,7 @@ import org.chromium.chrome.browser.data_sharing.ui.shared_image_tiles.SharedImag
 import org.chromium.chrome.browser.data_sharing.ui.shared_image_tiles.SharedImageTilesCoordinator;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.tab_ui.ActionConfirmationManager;
 import org.chromium.chrome.browser.tab_ui.RecyclerViewPosition;
 import org.chromium.chrome.browser.tab_ui.TabContentManager;
 import org.chromium.chrome.browser.tab_ui.TabContentManagerThumbnailProvider;
@@ -42,15 +45,16 @@ import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tasks.tab_management.ColorPickerCoordinator.ColorPickerLayoutType;
 import org.chromium.chrome.browser.tasks.tab_management.MessageService.MessageType;
 import org.chromium.chrome.browser.tasks.tab_management.TabGridDialogMediator.AnimationSourceViewProvider;
+import org.chromium.chrome.browser.tasks.tab_management.TabListEditorCoordinator.CreationMode;
 import org.chromium.chrome.browser.tasks.tab_management.TabListEditorCoordinator.TabListEditorController;
 import org.chromium.chrome.browser.tasks.tab_management.TabListMediator.GridCardOnClickListenerProvider;
 import org.chromium.chrome.browser.tasks.tab_management.TabProperties.UiType;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiMetricsHelper.TabGroupColorChangeActionType;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
+import org.chromium.chrome.browser.undo_tab_close_snackbar.UndoBarThrottle;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.desktop_windowing.DesktopWindowStateManager;
-import org.chromium.components.browser_ui.styles.SemanticColorUtils;
 import org.chromium.components.browser_ui.widget.scrim.ScrimManager;
 import org.chromium.components.collaboration.CollaborationService;
 import org.chromium.components.collaboration.ServiceStatus;
@@ -86,6 +90,7 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
     private final ModalDialogManager mModalDialogManager;
     private final TabListOnScrollListener mTabListOnScrollListener = new TabListOnScrollListener();
     private final BottomSheetController mBottomSheetController;
+    private final UndoBarThrottle mUndoBarThrottle;
     private @Nullable final TabLabeller mTabLabeller;
     private ObservableSupplierImpl<Boolean> mShowingOrAnimationSupplier =
             new ObservableSupplierImpl<>(false);
@@ -98,6 +103,7 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
     private @Nullable SharedImageTilesCoordinator mSharedImageTilesCoordinator;
     private @Nullable AnchoredPopupWindow mColorIconPopupWindow;
     private @Nullable TabSwitcherResetHandler mTabSwitcherResetHandler;
+    private @Nullable Integer mUndoBarThrottleToken;
 
     TabGridDialogCoordinator(
             Activity activity,
@@ -113,7 +119,8 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
             ScrimManager scrimManager,
             @Nullable ActionConfirmationManager actionConfirmationManager,
             @NonNull ModalDialogManager modalDialogManager,
-            @Nullable DesktopWindowStateManager desktopWindowStateManager) {
+            @Nullable DesktopWindowStateManager desktopWindowStateManager,
+            UndoBarThrottle undoBarThrottle) {
         try (TraceEvent e = TraceEvent.scoped("TabGridDialogCoordinator.constructor")) {
             mActivity = activity;
             mComponentName =
@@ -125,6 +132,7 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
             mCurrentTabGroupModelFilterSupplier = currentTabGroupModelFilterSupplier;
             mTabContentManager = tabContentManager;
             mTabSwitcherResetHandler = resetHandler;
+            mUndoBarThrottle = undoBarThrottle;
 
             Profile originalProfile =
                     mCurrentTabGroupModelFilterSupplier
@@ -173,11 +181,12 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
                         DataSharingServiceFactory.getForProfile(originalProfile);
 
                 @ColorInt
-                int backgroundColor = SemanticColorUtils.getDialogBgColor(mDialogView.getContext());
+                int backgroundColor =
+                        TabUiThemeProvider.getTabGridDialogBackgroundColor(
+                                mDialogView.getContext(), /* isIncognito= */ false);
                 SharedImageTilesConfig config =
                         new SharedImageTilesConfig.Builder(activity)
                                 .setBorderColor(backgroundColor)
-                                .setBackgroundColor(backgroundColor)
                                 .build();
                 mSharedImageTilesCoordinator =
                         new SharedImageTilesCoordinator(
@@ -301,6 +310,20 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
         }
     }
 
+    /** Interface to handle Ctrl+Shift+PageUp or Ctrl+Shift+PageDown key press events. */
+    /* package */ interface TabPageKeyListener {
+        /**
+         * Invoked when a valid key combination is detected.
+         *
+         * @param eventData The {@link TabKeyEventData}.
+         */
+        void onPageKeyEvent(TabKeyEventData eventData);
+    }
+
+    void setPageKeyEvent(TabPageKeyListener listener) {
+        mModel.set(PAGE_KEY_LISTENER, listener::onPageKeyEvent);
+    }
+
     @NonNull
     RecyclerViewPosition getRecyclerViewPosition() {
         return mTabListCoordinator.getRecyclerViewPosition();
@@ -336,7 +359,8 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
                             mModalDialogManager,
                             // Parent container handles desktop window state.
                             /* desktopWindowStateManager= */ null,
-                            /* edgeToEdgeSupplier= */ null);
+                            /* edgeToEdgeSupplier= */ null,
+                            CreationMode.DIALOG);
         }
 
         return mTabListEditorCoordinator.getController();
@@ -475,12 +499,22 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
         return this;
     }
 
+    /* package */ PropertyModel getModelForTesting() {
+        return mModel;
+    }
+
     @Override
     public void resetWithListOfTabs(@Nullable List<Tab> tabs) {
         mTabListCoordinator.resetWithListOfTabs(tabs, false);
         boolean startedToShow = mMediator.onReset(tabs);
         if (startedToShow) {
             mShowingOrAnimationSupplier.set(true);
+
+            // Defer any undo snackbars while the dialog is open or animating. While the dialog
+            // is open and not animating all tab closure events get dropped and are handled by
+            // TabGridDialogMediator instead. During animations we should instead queue the
+            // snackbars so that talkback announcements will not get clobbered.
+            throttleUndoBar();
         }
         mTabListOnScrollListener.postUpdate(mTabListCoordinator.getContainerView());
 
@@ -507,10 +541,14 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
     public void postHiding() {
         mTabListCoordinator.postHiding();
         // TODO(crbug.com/40239632): This shouldn't be required if resetWithListOfTabs(null) is
-        // called.
-        // Find out why this helps and fix upstream if possible.
+        // called. Find out why this helps and fix upstream if possible.
         mTabListCoordinator.softCleanup();
         mShowingOrAnimationSupplier.set(false);
+
+        // Stop throttling the undo snackbar and allow any pending snackbars to show. At this
+        // point a11y announcements will work correctly as there isn't an ongoing animation
+        // occluding the snackbar region.
+        stopThrottlingUndoBar();
     }
 
     @Override
@@ -554,5 +592,19 @@ public class TabGridDialogCoordinator implements TabGridDialogMediator.DialogCon
     @Override
     public void setGridContentSensitivity(boolean contentIsSensitive) {
         mMediator.setGridContentSensitivity(contentIsSensitive);
+    }
+
+    private void throttleUndoBar() {
+        if (mUndoBarThrottleToken != null) {
+            mUndoBarThrottle.stopThrottling(mUndoBarThrottleToken);
+        }
+        mUndoBarThrottleToken = mUndoBarThrottle.startThrottling();
+    }
+
+    private void stopThrottlingUndoBar() {
+        if (mUndoBarThrottleToken != null) {
+            mUndoBarThrottle.stopThrottling(mUndoBarThrottleToken);
+            mUndoBarThrottleToken = null;
+        }
     }
 }

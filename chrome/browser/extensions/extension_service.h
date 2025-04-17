@@ -23,7 +23,6 @@
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/extensions/blocklist.h"
 #include "chrome/browser/extensions/cws_info_service.h"
-#include "chrome/browser/extensions/delayed_install_manager.h"
 #include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/extension_telemetry_service_verdict_handler.h"
 #include "chrome/browser/extensions/forced_extensions/force_installed_metrics.h"
@@ -36,6 +35,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_creation_observer.h"
 #include "extensions/browser/crx_file_info.h"
+#include "extensions/browser/delayed_install_manager.h"
 #include "extensions/browser/disable_reason.h"
 #include "extensions/browser/extension_host_registry.h"
 #include "extensions/browser/extension_prefs.h"
@@ -76,8 +76,6 @@ class ExtensionUpdater;
 class ExternalInstallManager;
 class ExternalProviderManager;
 class PendingExtensionManager;
-class SharedModuleService;
-class UpdateObserver;
 enum class UnloadedExtensionReason;
 
 // This is an interface class to encapsulate the dependencies that
@@ -115,21 +113,9 @@ class ExtensionServiceInterface {
   // extension has been loaded.
   virtual void AddExtension(const Extension* extension) = 0;
 
-  // Check if we have preferences for the component extension and, if not or if
-  // the stored version differs, install the extension (without requirements
-  // checking) before calling AddExtension.
-  // TODO(crbug.com/408454704): Delete this method. Callers should use
-  // ExtensionRegistrar directly.
-  virtual void AddComponentExtension(const Extension* extension) = 0;
-
   // Unload the specified extension.
   virtual void UnloadExtension(const std::string& extension_id,
                                UnloadedExtensionReason reason) = 0;
-
-  // Remove the specified component extension.
-  // TODO(crbug.com/408454704): Delete this method. Callers should use
-  // ExtensionRegistrar directly.
-  virtual void RemoveComponentExtension(const std::string& extension_id) = 0;
 
   // Whether a user is able to disable a given extension.
   virtual bool UserCanDisableInstalledExtension(
@@ -172,9 +158,7 @@ class ExtensionService : public ExtensionServiceInterface,
   //
   void UnloadExtension(const std::string& extension_id,
                        UnloadedExtensionReason reason) override;
-  void RemoveComponentExtension(const std::string& extension_id) override;
   void AddExtension(const Extension* extension) override;
-  void AddComponentExtension(const Extension* extension) override;
   const Extension* GetPendingExtensionUpdate(
       const std::string& extension_id) const override;
   bool FinishDelayedInstallationIfReady(const std::string& extension_id,
@@ -203,24 +187,6 @@ class ExtensionService : public ExtensionServiceInterface,
 
   // Suppresses noisy failures.
   void ReloadExtensionWithQuietFailure(const std::string& extension_id);
-
-  // Uninstalls the specified extension. Callers should only call this method
-  // with extensions that exist. |reason| lets the caller specify why the
-  // extension is uninstalled.
-  // Note: this method synchronously removes the extension from the
-  // set of installed extensions stored in the ExtensionRegistry, but will
-  // asynchronously remove site-related data and the files stored on disk.
-  // Returns true if an uninstall was successfully triggered; this can fail if
-  // the extension cannot be uninstalled (such as a policy force-installed
-  // extension).
-  // |done_callback| is synchronously invoked once the site-related data and the
-  // files stored on disk are removed. If such a callback is not needed, pass in
-  // a null callback (base::NullCallback()).
-  bool UninstallExtension(
-      const std::string& extension_id,
-      UninstallReason reason,
-      std::u16string* error,
-      base::OnceClosure done_callback = base::NullCallback());
 
   // Enables the extension. If the extension is already enabled, does
   // nothing.
@@ -251,11 +217,6 @@ class ExtensionService : public ExtensionServiceInterface,
   // malware blocklist.
   void OnBlocklistStateAdded(const std::string& extension_id);
 
-  // Removes the disable reason and enable the extension if there are no disable
-  // reasons left and is not blocked for another reason.
-  void RemoveDisableReasonAndMaybeEnable(const std::string& extension_id,
-                                         disable_reason::DisableReason reason);
-
   // Performs action based on Omaha attributes for the extension.
   void PerformActionBasedOnOmahaAttributes(const std::string& extension_id,
                                            const base::Value::Dict& attributes);
@@ -285,49 +246,14 @@ class ExtensionService : public ExtensionServiceInterface,
       const ExtensionId& extension_id,
       const base::flat_set<int>& disable_reasons);
 
-  // Same as |DisableExtension|, but assumes that the request to disable
-  // |extension_id| originates from |source_extension| when evaluating whether
-  // the extension can be disabled. Please see |ExtensionMayModifySettings|
-  // for details.
-  void DisableExtensionWithSource(const Extension* source_extension,
-                                  const ExtensionId& extension_id,
-                                  disable_reason::DisableReason disable_reason);
-
   // Disable non-default and non-managed extensions with ids not in
   // |except_ids|. Default extensions are those from the Web Store with
   // |was_installed_by_default| flag.
   void DisableUserExtensionsExcept(const std::vector<std::string>& except_ids);
 
-  // Informs the service that an extension's files are in place for loading.
-  //
-  // |extension|                the extension
-  // |page_ordinal|             the location of the extension in the app
-  //                            launcher
-  // |install_flags|            a bitmask of InstallFlags
-  // |ruleset_install_prefs|    Install prefs needed for the Declarative Net
-  //                            Request API.
-  void OnExtensionInstalled(const Extension* extension,
-                            const syncer::StringOrdinal& page_ordinal,
-                            int install_flags,
-                            base::Value::Dict ruleset_install_prefs = {});
-  void OnExtensionInstalled(const Extension* extension,
-                            const syncer::StringOrdinal& page_ordinal) {
-    OnExtensionInstalled(extension, page_ordinal,
-                         static_cast<int>(kInstallFlagNone));
-  }
-
   // ExtensionHost of background page calls this method right after its renderer
   // main frame has been created.
   void DidCreateMainFrameForBackgroundPage(ExtensionHost* host);
-
-  // Unloads the given extension and marks the extension as terminated. This
-  // doesn't notify the user that the extension was terminated, if such a
-  // notification is desired the calling code is responsible for doing that.
-  void TerminateExtension(const std::string& extension_id);
-
-  // Adds/Removes update observers.
-  void AddUpdateObserver(UpdateObserver* observer);
-  void RemoveUpdateObserver(UpdateObserver* observer);
 
   // Returns whether a user is able to disable a given extension or if that is
   // not possible (for instance, extension was enabled by policy).
@@ -346,14 +272,6 @@ class ExtensionService : public ExtensionServiceInterface,
   content::BrowserContext* GetBrowserContext() const;
 
   Profile* profile() { return profile_; }
-
-  // TODO(crbug.com/408495366): Delete this method. Use ComponentLoader::Get()
-  // instead.
-  ComponentLoader* component_loader() { return component_loader_; }
-
-  SharedModuleService* shared_module_service() {
-    return shared_module_service_.get();
-  }
 
   ForceInstalledTracker* force_installed_tracker() {
     return &force_installed_tracker_;
@@ -510,11 +428,6 @@ class ExtensionService : public ExtensionServiceInterface,
 
   std::unique_ptr<ExtensionActionStorageManager>
       extension_action_storage_manager_;
-
-  // The SharedModuleService used to check for import dependencies.
-  std::unique_ptr<SharedModuleService> shared_module_service_;
-
-  base::ObserverList<UpdateObserver, true>::Unchecked update_observers_;
 
   std::unique_ptr<ChromeExtensionRegistrarDelegate>
       extension_registrar_delegate_;

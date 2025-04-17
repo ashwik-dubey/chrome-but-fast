@@ -20,9 +20,8 @@ StructTraits<network::mojom::LoadTimingInternalInfoDataView,
 const base::TimeDelta&
 StructTraits<network::mojom::LoadTimingInternalInfoDataView,
              net::LoadTimingInternalInfo>::
-    url_request_delegate_connected_delay(
-        const net::LoadTimingInternalInfo& info) {
-  return info.url_request_delegate_connected_delay;
+    connected_callback_delay(const net::LoadTimingInternalInfo& info) {
+  return info.connected_callback_delay;
 }
 
 // static

@@ -246,6 +246,7 @@ class MockSessionManager : public BocaSessionManager {
   MOCK_METHOD(void, LoadCurrentSession, (bool), (override));
   MOCK_METHOD(void, ToggleAppStatus, (bool), (override));
   MOCK_METHOD(void, NotifyAppReload, (), (override));
+  MOCK_METHOD(bool, disabled_on_non_managed_network, (), (override));
   ~MockSessionManager() override = default;
 };
 
@@ -389,7 +390,6 @@ class BocaAppPageHandlerTest : public testing::Test {
     // Register self as listener.
     ON_CALL(*boca_app_client(), GetSessionManager())
         .WillByDefault(Return(session_manager()));
-
     // Create the WebContents for the BrowserContext.
     web_contents_ = content::WebContents::Create(
         content::WebContents::CreateParams(browser_context));
@@ -612,6 +612,8 @@ TEST_F(BocaAppPageHandlerTest, CreateSessionWithFullInput) {
   EXPECT_CALL(*session_manager(),
               UpdateCurrentSession(_, /*dispatch_event=*/true))
       .Times(1);
+  EXPECT_CALL(*session_manager(), disabled_on_non_managed_network())
+      .WillOnce(Return(false));
 
   boca_app_handler()->CreateSession(config->Clone(), future_1.GetCallback());
   ASSERT_TRUE(future_1.Wait());
@@ -662,10 +664,47 @@ TEST_F(BocaAppPageHandlerTest, CreateSessionWithCritialInputOnly) {
 
   // Verify local events not dispatched
   EXPECT_CALL(*session_manager(), NotifyLocalCaptionEvents(_)).Times(0);
+  EXPECT_CALL(*session_manager(), disabled_on_non_managed_network())
+      .WillOnce(Return(false));
 
   boca_app_handler()->CreateSession(config.Clone(), future_1.GetCallback());
   ASSERT_TRUE(future_1.Wait());
   EXPECT_TRUE(future_1.Get());
+}
+
+TEST_F(BocaAppPageHandlerTest, CreateSessionFailedOnNonManagedNetwork) {
+  // Page handler callback.
+  base::test::TestFuture<base::expected<std::unique_ptr<::boca::Session>,
+                                        google_apis::ApiErrorCode>>
+      future;
+  // API callback.
+  base::test::TestFuture<bool> future_1;
+
+  const auto config = mojom::Config::New(
+      base::Minutes(2), std::nullopt, nullptr,
+      std::vector<mojom::IdentityPtr>{}, std::vector<mojom::IdentityPtr>{},
+      mojom::OnTaskConfigPtr(nullptr), GetCommonCaptionConfig(), "");
+
+  ::boca::UserIdentity teacher;
+  teacher.set_gaia_id(kGaiaId.ToString());
+  CreateSessionRequest request(
+      nullptr, kTestUrlBase, teacher, config->session_duration,
+      ::boca::Session::SessionState::Session_SessionState_ACTIVE,
+      future.GetCallback());
+  EXPECT_CALL(*session_manager(), disabled_on_non_managed_network())
+      .WillOnce(Return(true));
+  EXPECT_CALL(*session_client_impl(), CreateSession(_)).Times(0);
+
+  EXPECT_CALL(*session_manager(),
+              UpdateCurrentSession(_, /*dispatch_event=*/true))
+      .Times(0);
+
+  // Verify local events dispatched
+  EXPECT_CALL(*session_manager(), NotifyLocalCaptionEvents(_)).Times(1);
+
+  boca_app_handler()->CreateSession(config.Clone(), future_1.GetCallback());
+  ASSERT_TRUE(future_1.Wait());
+  EXPECT_FALSE(future_1.Get());
 }
 
 TEST_F(BocaAppPageHandlerTest, GetSessionWithFullInputTest) {
@@ -1626,6 +1665,27 @@ TEST_F(BocaAppPageHandlerTest, UpdateNonEmptyStudentActivitySucceed) {
   EXPECT_TRUE(result[1]->activity->is_active);
 }
 
+TEST_F(BocaAppPageHandlerTest,
+       UpdateStudentActivityWithEmptyDeviceStateSucceed) {
+  std::map<std::string, ::boca::StudentStatus> activities;
+  ::boca::StudentStatus status_1;
+  status_1.set_state(::boca::StudentStatus::REMOVED_BY_OTHER_SESSION);
+  activities.emplace("1", std::move(status_1));
+
+  base::test::TestFuture<std::vector<mojom::IdentifiedActivityPtr>> future;
+  fake_page()->SetActivityInterceptorCallback(future.GetCallback());
+  boca_app_handler()->OnConsumerActivityUpdated(activities);
+  auto result = future.Take();
+  EXPECT_EQ(1u, result.size());
+  // Verify only first device added.
+  EXPECT_EQ("1", result[0]->id);
+  EXPECT_EQ(mojom::StudentStatusDetail::kRemovedByOtherSession,
+            result[0]->activity->student_status_detail);
+  EXPECT_FALSE(result[0]->activity->is_active);
+  EXPECT_EQ("", result[0]->activity->active_tab);
+  EXPECT_EQ("", result[0]->activity->view_screen_session_code);
+}
+
 TEST_F(BocaAppPageHandlerTest, RemoveStudentSucceedAlsoRemoveFromLocalSession) {
   auto* session_id = "123";
   auto session = std::make_unique<::boca::Session>();
@@ -1761,13 +1821,27 @@ TEST_F(BocaAppPageHandlerTest, AddStudentsSucceedAlsoTriggerSessionReload) {
           // here instead of using SaveArg.
           Invoke([&](auto request) {
             ASSERT_EQ(kGaiaId, request->gaia_id());
-            ASSERT_EQ(2u, request->student_ids().size());
+            ASSERT_EQ(2u, request->students().size());
             ASSERT_EQ(group_id, request->student_group_id());
+            EXPECT_EQ("1", request->students()[0].gaia_id());
+            EXPECT_EQ("a", request->students()[0].full_name());
+            EXPECT_EQ("a@gmail.com", request->students()[0].email());
+            EXPECT_EQ("cdn://s1", request->students()[0].photo_url());
+
+            EXPECT_EQ("2", request->students()[1].gaia_id());
+            EXPECT_EQ("b", request->students()[1].full_name());
+            EXPECT_EQ("b@gmail.com", request->students()[1].email());
+            EXPECT_EQ("cdn://s2", request->students()[1].photo_url());
             request->callback().Run(true);
           })));
   EXPECT_CALL(*session_manager(), LoadCurrentSession(/*from_polling=*/false))
       .Times(1);
-  boca_app_handler()->AddStudents({"4", "5"}, future_1.GetCallback());
+  std::vector<mojom::IdentityPtr> students;
+  students.push_back(
+      mojom::Identity::New("1", "a", "a@gmail.com", GURL("cdn://s1")));
+  students.push_back(
+      mojom::Identity::New("2", "b", "b@gmail.com", GURL("cdn://s2")));
+  boca_app_handler()->AddStudents(std::move(students), future_1.GetCallback());
   ::testing::Mock::VerifyAndClearExpectations(session_client_impl());
   ::testing::Mock::VerifyAndClearExpectations(session_manager());
 
@@ -1798,13 +1872,13 @@ TEST_F(BocaAppPageHandlerTest, AddStudentsWithHTTPFailure) {
           // here instead of using SaveArg.
           Invoke([&](auto request) {
             ASSERT_EQ(kGaiaId, request->gaia_id());
-            ASSERT_EQ(2u, request->student_ids().size());
+            ASSERT_EQ(0u, request->students().size());
             request->callback().Run(
                 base::unexpected(google_apis::ApiErrorCode::HTTP_FORBIDDEN));
           })));
   EXPECT_CALL(*session_manager(), LoadCurrentSession(/*from_polling=*/false))
       .Times(0);
-  boca_app_handler()->AddStudents({"4", "5"}, future_1.GetCallback());
+  boca_app_handler()->AddStudents({}, future_1.GetCallback());
   ASSERT_TRUE(future_1.Wait());
   EXPECT_TRUE(future_1.Get().has_value());
 }
@@ -1895,6 +1969,8 @@ TEST_F(BocaAppPageHandlerTest, JoinSessionSucceeded) {
           Invoke([&](auto request) {
             request->callback().Run(std::make_unique<::boca::Session>());
           })));
+  EXPECT_CALL(*session_manager(), disabled_on_non_managed_network())
+      .WillOnce(Return(false));
 
   boca_app_handler()->SubmitAccessCode("code", future_1.GetCallback());
   ASSERT_TRUE(future_1.Wait());
@@ -1924,7 +2000,32 @@ TEST_F(BocaAppPageHandlerTest, JoinSessionFailed) {
             request->callback().Run(
                 base::unexpected(google_apis::ApiErrorCode::HTTP_FORBIDDEN));
           })));
+  EXPECT_CALL(*session_manager(), disabled_on_non_managed_network())
+      .WillOnce(Return(false));
 
+  boca_app_handler()->SubmitAccessCode("code", future_1.GetCallback());
+  ASSERT_TRUE(future_1.Wait());
+  EXPECT_EQ(mojom::SubmitAccessCodeError::kInvalid, future_1.Get().value());
+}
+
+TEST_F(BocaAppPageHandlerTest, JoinSessionFailedDueToNonManagedNetwork) {
+  EXPECT_CALL(*session_manager(),
+              UpdateCurrentSession(_, /*dispatch_event=*/true))
+      .Times(0);
+
+  // Page handler callback.
+  base::test::TestFuture<base::expected<std::unique_ptr<::boca::Session>,
+                                        google_apis::ApiErrorCode>>
+      future;
+  // API callback.
+  base::test::TestFuture<std::optional<mojom::SubmitAccessCodeError>> future_1;
+
+  JoinSessionRequest request(nullptr, kTestUrlBase, ::boca::UserIdentity(),
+                             "device", "code", future.GetCallback());
+
+  EXPECT_CALL(*session_client_impl(), JoinSession(_)).Times(0);
+  EXPECT_CALL(*session_manager(), disabled_on_non_managed_network())
+      .WillOnce(Return(true));
   boca_app_handler()->SubmitAccessCode("code", future_1.GetCallback());
   ASSERT_TRUE(future_1.Wait());
   EXPECT_EQ(mojom::SubmitAccessCodeError::kInvalid, future_1.Get().value());

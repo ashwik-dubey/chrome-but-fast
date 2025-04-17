@@ -634,9 +634,6 @@
   self.logoVendor = ios::provider::CreateLogoVendor(browser, self.webState);
   self.NTPViewController = [componentFactory NTPViewController];
   self.headerViewController = [componentFactory headerViewController];
-  [self.headerViewController
-      setUserSignedIn:self.authService && self.authService->HasPrimaryIdentity(
-                                              signin::ConsentLevel::kSignin)];
   self.NTPMediator =
       [componentFactory NTPMediatorForBrowser:browser
                      identityDiscImageUpdater:self.headerViewController];
@@ -711,6 +708,8 @@
       HandlerForProtocol(dispatcher, ApplicationCommands);
   headerViewController.browserCoordinatorHandler =
       HandlerForProtocol(dispatcher, BrowserCoordinatorCommands);
+  headerViewController.helpHandler =
+      HandlerForProtocol(dispatcher, HelpCommands);
 
   headerViewController.commandHandler = self;
   headerViewController.customizationDelegate = self;
@@ -796,8 +795,6 @@
   _tabGroupIndicatorCoordinator = [[TabGroupIndicatorCoordinator alloc]
       initWithBaseViewController:self.NTPViewController
                          browser:self.browser];
-  _tabGroupIndicatorCoordinator.parentViewController =
-      self.headerViewController;
   _tabGroupIndicatorCoordinator.toolbarHeightDelegate = nil;
   _tabGroupIndicatorCoordinator.displayedOnNTP = YES;
   [_tabGroupIndicatorCoordinator start];
@@ -876,6 +873,7 @@
       __weak __typeof(self) weakSelf = self;
       [handler showAccountMenuWithAnchorView:identityDisc
                         skipIfUINotAvailable:NO
+                                     fromWeb:NO
                                   completion:^{
                                     [weakSelf showAccountMenuDidFinish];
                                   }];
@@ -1354,6 +1352,12 @@
   [self dismissCustomizationMenu];
 }
 
+- (void)shopCardOpened {
+  RecordMagicStackClick(ContentSuggestionsModuleType::kShopCard,
+                        [self isStartSurface]);
+  RecordHomeAction(IOSHomeActionType::kShopCard, [self isStartSurface]);
+}
+
 #pragma mark - OverscrollActionsControllerDelegate
 
 - (void)overscrollActionNewTab:(OverscrollActionsController*)controller {
@@ -1464,10 +1468,6 @@
   }
   signin::PrimaryAccountChangeEvent::Type eventType =
       event.GetEventTypeFor(signin::ConsentLevel::kSignin);
-  [self.headerViewController
-      setUserSignedIn:eventType ==
-                      signin::PrimaryAccountChangeEvent::Type::kSet];
-
   switch (eventType) {
     case signin::PrimaryAccountChangeEvent::Type::kSet:
     case signin::PrimaryAccountChangeEvent::Type::kCleared: {

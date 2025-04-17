@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/ai/on_device_translation/language_detector.h"
 
 #include "third_party/blink/renderer/bindings/modules/v8/v8_ai_create_monitor_callback.h"
+#include "third_party/blink/renderer/core/dom/abort_controller.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/modules/ai/ai_availability.h"
 #include "third_party/blink/renderer/modules/ai/ai_context_observer.h"
@@ -74,8 +75,20 @@ class LanguageDetectorCreateTask
     if (options->hasMonitor()) {
       monitor_ = MakeGarbageCollected<AICreateMonitor>(GetExecutionContext(),
                                                        task_runner_);
-      std::ignore = options->monitor()->Invoke(nullptr, monitor_);
+
+      // If an exception is thrown, don't initiate language detection model
+      // download. `AICreateMonitorCallback`'s `Invoke` will automatically
+      // reject the promise with the thrown exception.
+      if (options->monitor()->Invoke(nullptr, monitor_).IsNothing()) {
+        return;
+      }
     }
+
+    AIInterfaceProxy::GetLanguageDetectionModel(
+        GetExecutionContext(),
+        WTF::BindOnce(&LanguageDetectorCreateTask::OnModelLoaded,
+                      WrapPersistent(this))
+            .Then(RejectOnDestruction(resolver)));
   }
 
   void Trace(Visitor* visitor) const override {
@@ -94,7 +107,8 @@ class LanguageDetectorCreateTask
     if (!maybe_model.has_value()) {
       switch (maybe_model.error()) {
         case DetectLanguageError::kUnavailable:
-          resolver_->Reject("Model not available");
+          resolver_->Reject(MakeGarbageCollected<DOMException>(
+              DOMExceptionCode::kUnknownError, "Model not available"));
           break;
       }
       Cleanup();
@@ -106,7 +120,7 @@ class LanguageDetectorCreateTask
                                          kNormalizedDownloadProgressMax);
     }
     resolver_->Resolve(MakeGarbageCollected<LanguageDetector>(
-        maybe_model.value(), options_, task_runner_));
+        GetScriptState(), maybe_model.value(), options_, task_runner_));
     Cleanup();
   }
 
@@ -137,24 +151,29 @@ void OnGotStatus(
 // static
 ScriptPromise<V8AIAvailability> LanguageDetector::availability(
     ScriptState* script_state,
+    LanguageDetectorCreateCoreOptions* options,
     ExceptionState& exception_state) {
-  if (!script_state->ContextIsValid()) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "The execution context is not valid.");
+  if (!ValidateScriptState(script_state, exception_state)) {
     return EmptyPromise();
   }
+
+  // TODO(crbug.com/409848465): Validate and canonicalize
+  // expectedInputLanguages.
 
   ScriptPromiseResolver<V8AIAvailability>* resolver =
       MakeGarbageCollected<ScriptPromiseResolver<V8AIAvailability>>(
           script_state);
   ScriptPromise<V8AIAvailability> promise = resolver->Promise();
-  ExecutionContext* execution_context = ExecutionContext::From(script_state);
+
+  // TODO(402166942): Return unavailable if document is not allowed to use
+  // language detector permission policy.
+
+  ExecutionContext* context = ExecutionContext::From(script_state);
 
   AIInterfaceProxy::GetLanguageDetectionModelStatus(
-      execution_context,
-      WTF::BindOnce(&OnGotStatus, WrapWeakPersistent(execution_context),
-                    WrapPersistent(resolver))
-          .Then(RejectOnDestruction(resolver)));
+      context, WTF::BindOnce(&OnGotStatus, WrapWeakPersistent(context),
+                             WrapPersistent(resolver))
+                   .Then(RejectOnDestruction(resolver)));
 
   return promise;
 }
@@ -164,12 +183,12 @@ ScriptPromise<LanguageDetector> LanguageDetector::create(
     ScriptState* script_state,
     LanguageDetectorCreateOptions* options,
     ExceptionState& exception_state) {
-  // TODO(crbug.com/349927087): Take `options` into account.
-  if (!script_state->ContextIsValid()) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "The execution context is not valid.");
+  if (!ValidateScriptState(script_state, exception_state)) {
     return EmptyPromise();
   }
+
+  // TODO(crbug.com/409848465): Validate and canonicalize
+  // expectedInputLanguages.
 
   CHECK(options);
   AbortSignal* signal = options->getSignalOr(nullptr);
@@ -177,33 +196,44 @@ ScriptPromise<LanguageDetector> LanguageDetector::create(
     return EmptyPromise();
   }
 
+  // TODO(402166942): Reject if document is not allowed to use language detector
+  // permission policy.
+
   auto* resolver =
       MakeGarbageCollected<ScriptPromiseResolver<LanguageDetector>>(
           script_state);
-  LanguageDetectorCreateTask* create_task =
-      MakeGarbageCollected<LanguageDetectorCreateTask>(script_state, resolver,
-                                                       options);
-
-  AIInterfaceProxy::GetLanguageDetectionModel(
-      ExecutionContext::From(script_state),
-      WTF::BindOnce(&LanguageDetectorCreateTask::OnModelLoaded,
-                    WrapPersistent(create_task))
-          .Then(RejectOnDestruction(resolver)));
+  MakeGarbageCollected<LanguageDetectorCreateTask>(script_state, resolver,
+                                                   options);
 
   return resolver->Promise();
 }
 
 LanguageDetector::LanguageDetector(
+    ScriptState* script_state,
     LanguageDetectionModel* language_detection_model,
     LanguageDetectorCreateOptions* options,
     scoped_refptr<base::SequencedTaskRunner>& task_runner)
     : task_runner_(task_runner),
       language_detection_model_(language_detection_model),
-      options_(options) {}
+      destruction_abort_controller_(AbortController::Create(script_state)),
+      create_abort_signal_(options->getSignalOr(nullptr)) {
+  if (options->hasExpectedInputLanguages()) {
+    expected_input_languages_ = options->expectedInputLanguages();
+  }
+
+  if (create_abort_signal_) {
+    CHECK(!create_abort_signal_->aborted());
+    create_abort_handle_ = create_abort_signal_->AddAlgorithm(WTF::BindOnce(
+        &LanguageDetector::OnCreateAbortSignalAborted, WrapWeakPersistent(this),
+        WrapWeakPersistent(script_state)));
+  }
+}
 
 void LanguageDetector::Trace(Visitor* visitor) const {
   visitor->Trace(language_detection_model_);
-  visitor->Trace(options_);
+  visitor->Trace(destruction_abort_controller_);
+  visitor->Trace(create_abort_signal_);
+  visitor->Trace(create_abort_handle_);
   ScriptWrappable::Trace(visitor);
 }
 
@@ -212,20 +242,18 @@ ScriptPromise<IDLSequence<LanguageDetectionResult>> LanguageDetector::detect(
     const WTF::String& input,
     LanguageDetectorDetectOptions* options,
     ExceptionState& exception_state) {
-  if (!script_state->ContextIsValid()) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "The execution context is not valid.");
-    return ScriptPromise<IDLSequence<LanguageDetectionResult>>();
+  if (!ValidateScriptState(script_state, exception_state)) {
+    return EmptyPromise();
   }
 
-  AbortSignal* signal = options->getSignalOr(nullptr);
-  if (HandleAbortSignal(signal, script_state, exception_state)) {
+  AbortSignal* composite_signal = CreateCompositeSignal(script_state, options);
+  if (HandleAbortSignal(composite_signal, script_state, exception_state)) {
     return EmptyPromise();
   }
 
   auto* resolver = MakeGarbageCollected<
       ResolverWithAbortSignal<IDLSequence<LanguageDetectionResult>>>(
-      script_state, signal);
+      script_state, composite_signal);
 
   language_detection_model_->DetectLanguage(
       task_runner_, input,
@@ -234,8 +262,25 @@ ScriptPromise<IDLSequence<LanguageDetectionResult>> LanguageDetector::detect(
   return resolver->Promise();
 }
 
-void LanguageDetector::destroy(ScriptState*) {
-  // TODO(crbug.com/349927087): Implement the function.
+void LanguageDetector::destroy(ScriptState* script_state) {
+  destruction_abort_controller_->abort(script_state);
+  DestroyImpl();
+}
+
+void LanguageDetector::DestroyImpl() {
+  language_detection_model_ = nullptr;
+  if (create_abort_handle_) {
+    create_abort_signal_->RemoveAlgorithm(create_abort_handle_);
+    create_abort_handle_ = nullptr;
+  }
+}
+
+void LanguageDetector::OnCreateAbortSignalAborted(ScriptState* script_state) {
+  if (script_state) {
+    destruction_abort_controller_->abort(
+        script_state, create_abort_signal_->reason(script_state));
+  }
+  DestroyImpl();
 }
 
 ScriptPromise<IDLDouble> LanguageDetector::measureInputUsage(
@@ -243,32 +288,18 @@ ScriptPromise<IDLDouble> LanguageDetector::measureInputUsage(
     const WTF::String& input,
     LanguageDetectorDetectOptions* options,
     ExceptionState& exception_state) {
-  // https://webmachinelearning.github.io/writing-assistance-apis/#measure-ai-model-input-usage
-  //
-  // If modelObject’s relevant global object is a Window whose associated
-  // Document is not fully active, then return a promise rejected with an
-  // "InvalidStateError" DOMException.
-  auto* context = ExecutionContext::From(script_state);
-  if (auto* window = DynamicTo<LocalDOMWindow>(context)) {
-    auto* document = window->document();
-    if (document && !document->IsActive()) {
-      exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                        "The document is not active");
-      return EmptyPromise();
-    }
+  if (!ValidateScriptState(script_state, exception_state)) {
+    return EmptyPromise();
   }
 
-  // TODO(crbug.com/399693771): This should be a composite signal of the passed
-  // in abort signal and the create abort signal.
-  CHECK(options);
-  AbortSignal* signal = options->getSignalOr(nullptr);
-  if (HandleAbortSignal(signal, script_state, exception_state)) {
+  AbortSignal* composite_signal = CreateCompositeSignal(script_state, options);
+  if (HandleAbortSignal(composite_signal, script_state, exception_state)) {
     return EmptyPromise();
   }
 
   ResolverWithAbortSignal<IDLDouble>* resolver =
-      MakeGarbageCollected<ResolverWithAbortSignal<IDLDouble>>(script_state,
-                                                               signal);
+      MakeGarbageCollected<ResolverWithAbortSignal<IDLDouble>>(
+          script_state, composite_signal);
 
   task_runner_->PostTask(
       FROM_HERE,
@@ -284,14 +315,39 @@ double LanguageDetector::inputQuota() const {
 
 HeapVector<Member<LanguageDetectionResult>> LanguageDetector::ConvertResult(
     WTF::Vector<LanguageDetectionModel::LanguagePrediction> predictions) {
-  HeapVector<Member<LanguageDetectionResult>> result;
+  float last_score = 1;
+  float cumulative_confidence = 0;
+
+  HeapVector<Member<LanguageDetectionResult>> results;
   for (const auto& prediction : predictions) {
-    auto* one = MakeGarbageCollected<LanguageDetectionResult>();
-    result.push_back(one);
-    one->setDetectedLanguage(String(prediction.language));
-    one->setConfidence(prediction.score);
+    CHECK_GE(prediction.score, 0);
+    CHECK_LE(prediction.score, 1 - cumulative_confidence);
+    CHECK_LE(prediction.score, last_score);
+    last_score = prediction.score;
+
+    if (prediction.score == 0 || prediction.language == "unknown") {
+      break;
+    }
+    auto* result = MakeGarbageCollected<LanguageDetectionResult>();
+    results.push_back(result);
+    result->setDetectedLanguage(String(prediction.language));
+    result->setConfidence(prediction.score);
+
+    cumulative_confidence += prediction.score;
+
+    if (cumulative_confidence >= 0.99) {
+      break;
+    }
   }
-  return result;
+
+  // Append "und" to end. Set it's confidence so that the total confidences add
+  // up to 1.
+  auto* result = MakeGarbageCollected<LanguageDetectionResult>();
+  results.push_back(result);
+  result->setDetectedLanguage(String("und"));
+  result->setConfidence(1 - cumulative_confidence);
+
+  return results;
 }
 
 void LanguageDetector::OnDetectComplete(
@@ -312,6 +368,21 @@ void LanguageDetector::OnDetectComplete(
         resolver->Reject("Model not available");
     }
   }
+}
+
+AbortSignal* LanguageDetector::CreateCompositeSignal(
+    ScriptState* script_state,
+    LanguageDetectorDetectOptions* options) {
+  HeapVector<Member<AbortSignal>> signals;
+
+  signals.push_back(destruction_abort_controller_->signal());
+
+  CHECK(options);
+  if (options->hasSignal()) {
+    signals.push_back(options->signal());
+  }
+
+  return MakeGarbageCollected<AbortSignal>(script_state, signals);
 }
 
 }  // namespace blink

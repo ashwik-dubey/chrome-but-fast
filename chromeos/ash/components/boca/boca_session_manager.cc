@@ -12,6 +12,7 @@
 #include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/network_config_service.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -34,6 +35,17 @@
 
 namespace ash::boca {
 
+namespace {
+const net::BackoffEntry::Policy kStudentHeartbeatBackoffPolicy = {
+    .num_errors_to_ignore = 0,
+    .initial_delay_ms = base::Seconds(30).InMilliseconds(),
+    .multiply_factor = 1.2,
+    .jitter_factor = 0.2,
+    .maximum_backoff_ms = base::Seconds(90).InMilliseconds(),
+    .entry_lifetime_ms = -1,
+    .always_use_initial_delay = false};
+}  // namespace
+
 BocaSessionManager::BocaSessionManager(SessionClientImpl* session_client_impl,
                                        const PrefService* pref_service,
                                        AccountId account_id,
@@ -41,7 +53,8 @@ BocaSessionManager::BocaSessionManager(SessionClientImpl* session_client_impl,
     : is_producer_(is_producer),
       account_id_(std::move(account_id)),
       pref_service_(pref_service),
-      session_client_impl_(std::move(session_client_impl)) {
+      session_client_impl_(std::move(session_client_impl)),
+      student_heartbeat_retry_backoff_{&kStudentHeartbeatBackoffPolicy} {
   in_session_polling_interval_ =
       features::IsBocaCustomPollingEnabled()
           ? ash::features::kBocaInSessionPeriodicJobIntervalInSeconds.Get()
@@ -305,6 +318,10 @@ void BocaSessionManager::NotifyAppReload() {
   }
 }
 
+bool BocaSessionManager::disabled_on_non_managed_network() {
+  return disabled_on_non_managed_network_;
+}
+
 void BocaSessionManager::SetSessionCaptionInitializer(
     SessionCaptionInitializer session_caption_initializer) {
   session_caption_initializer_ = session_caption_initializer;
@@ -430,6 +447,7 @@ void BocaSessionManager::NotifySessionUpdate() {
   if (IsSessionActive(previous_session_.get()) &&
       !IsSessionActive(current_session_.get())) {
     for (auto& observer : observers_) {
+      VLOG(1) << "[Boca] notifying session ended";
       StartSessionPolling(/*in_session=*/false);
       observer.OnSessionEnded(previous_session_->session_id());
       if (is_producer_) {
@@ -442,6 +460,7 @@ void BocaSessionManager::NotifySessionUpdate() {
   if (!IsSessionActive(previous_session_.get()) &&
       IsSessionActive(current_session_.get())) {
     for (auto& observer : observers_) {
+      VLOG(1) << "[Boca] notifying session started";
       StartSessionPolling(/*in_session=*/true);
       observer.OnSessionStarted(current_session_->session_id(),
                                 current_session_->teacher());
@@ -495,6 +514,7 @@ void BocaSessionManager::NotifyOnTaskUpdate() {
 
 void BocaSessionManager::NotifySessionCaptionConfigUpdate() {
   if (!IsSessionActive(current_session_.get())) {
+    VLOG(1) << "[Boca] no active session, will not notify captions update";
     return;
   }
 
@@ -508,6 +528,10 @@ void BocaSessionManager::NotifySessionCaptionConfigUpdate() {
   // it for user before they realize.
   if (is_producer_ && !is_app_opened_ &&
       current_session_caption_config.captions_enabled()) {
+    VLOG(1) << "[Boca] will not notify captions update, producer: "
+            << is_producer_ << ", app opened: " << is_app_opened_
+            << ", captions enabled: "
+            << current_session_caption_config.captions_enabled();
     return;
   }
 
@@ -516,6 +540,7 @@ void BocaSessionManager::NotifySessionCaptionConfigUpdate() {
 
   if (previous_session_caption_config.SerializeAsString() !=
       current_session_caption_config.SerializeAsString()) {
+    VLOG(1) << "[Boca] notify captions update";
     for (auto& observer : observers_) {
       observer.OnSessionCaptionConfigUpdated(
           kMainStudentGroupName, current_session_caption_config,
@@ -525,6 +550,11 @@ void BocaSessionManager::NotifySessionCaptionConfigUpdate() {
                            : std::string());
     }
     HandleCaptionNotification();
+  } else {
+    VLOG(1) << "[Boca] no captions change, will not notify. Captions enabled: "
+            << current_session_caption_config.captions_enabled()
+            << ", translation enabled: "
+            << current_session_caption_config.translations_enabled();
   }
 }
 
@@ -641,7 +671,8 @@ void BocaSessionManager::StartSendingStudentHeartbeatRequests() {
       student_heartbeat_interval_ == base::Seconds(0)) {
     return;
   }
-  if (!student_heartbeat_timer_.IsRunning()) {
+  if (!student_heartbeat_timer_.IsRunning() &&
+      !student_heartbeat_backoff_timer_.IsRunning()) {
     student_heartbeat_timer_.Start(
         FROM_HERE, student_heartbeat_interval_, this,
         &BocaSessionManager::SendStudentHeartbeatRequest);
@@ -664,14 +695,31 @@ void BocaSessionManager::SendStudentHeartbeatRequest() {
       session_client_impl_->sender(),
       BocaAppClient::Get()->GetSchoolToolsServerBaseUrl(), session_id, gaia_id,
       device_id, student_group_id,
-      base::BindOnce(
-          [](base::expected<bool, google_apis::ApiErrorCode> result) {
-            if (!result.has_value()) {
-              // TODO: crbug.com/366316261 - Add metrics for update failure.
-              DVLOG(1) << "[Boca]Failed to call student heartbeat.";
-            }
-          }));
+      base::BindOnce(&BocaSessionManager::OnStudentHeartbeat,
+                     weak_factory_.GetWeakPtr()));
   session_client_impl_->StudentHeartbeat(std::move(request));
+}
+
+void BocaSessionManager::OnStudentHeartbeat(
+    base::expected<bool, google_apis::ApiErrorCode> result) {
+  if (!result.has_value()) {
+    // TODO: crbug.com/366316261 - Add metrics for update failure.
+    LOG(WARNING) << "[Boca]Failed to call student heartbeat with error code: ."
+                 << result.error();
+    if ((result.error() >= 500 && result.error() < 600) ||
+        result.error() == 429) {
+      student_heartbeat_retry_backoff_.InformOfRequest(/*succeeded=*/false);
+      // Stop the repeating student heartbeat timer and start the backoff
+      // oneshot timer.
+      StopSendingStudentHeartbeatRequests();
+      student_heartbeat_backoff_timer_.Start(
+          FROM_HERE, student_heartbeat_retry_backoff_.GetTimeUntilRelease(),
+          this, &BocaSessionManager::SendStudentHeartbeatRequest);
+    }
+    return;
+  }
+  student_heartbeat_retry_backoff_.Reset();
+  StartSendingStudentHeartbeatRequests();
 }
 
 void BocaSessionManager::UpdateNetworkRestriction(

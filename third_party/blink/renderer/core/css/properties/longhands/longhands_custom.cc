@@ -550,7 +550,7 @@ const CSSValue* AnimationRangeStart::ParseSingleValue(
     const CSSParserLocalContext&) const {
   return css_parsing_utils::ConsumeCommaSeparatedList(
       css_parsing_utils::ConsumeAnimationRange, stream, context,
-      /* default_offset_percent */ 0.0);
+      /* default_offset_percent */ 0.0, /*allow_auto=*/false);
 }
 
 const CSSValue* AnimationRangeStart::CSSValueFromComputedStyleInternal(
@@ -572,7 +572,7 @@ const CSSValue* AnimationRangeEnd::ParseSingleValue(
     const CSSParserLocalContext&) const {
   return css_parsing_utils::ConsumeCommaSeparatedList(
       css_parsing_utils::ConsumeAnimationRange, stream, context,
-      /* default_offset_percent */ 100.0);
+      /* default_offset_percent */ 100.0, /*allow_auto=*/false);
 }
 
 const CSSValue* AnimationRangeEnd::CSSValueFromComputedStyleInternal(
@@ -635,7 +635,7 @@ const CSSValue* AnimationTriggerRangeStart::ParseSingleValue(
     const CSSParserLocalContext&) const {
   return css_parsing_utils::ConsumeCommaSeparatedList(
       css_parsing_utils::ConsumeAnimationRange, stream, context,
-      /* default_offset_percent */ 0.0);
+      /* default_offset_percent */ 0.0, /*allow_auto=*/false);
 }
 
 const CSSValue* AnimationTriggerRangeStart::CSSValueFromComputedStyleInternal(
@@ -657,7 +657,7 @@ const CSSValue* AnimationTriggerRangeEnd::ParseSingleValue(
     const CSSParserLocalContext&) const {
   return css_parsing_utils::ConsumeCommaSeparatedList(
       css_parsing_utils::ConsumeAnimationRange, stream, context,
-      /* default_offset_percent */ 100.0);
+      /* default_offset_percent */ 100.0, /*allow_auto=*/false);
 }
 
 const CSSValue* AnimationTriggerRangeEnd::CSSValueFromComputedStyleInternal(
@@ -679,7 +679,7 @@ const CSSValue* AnimationTriggerExitRangeStart::ParseSingleValue(
     const CSSParserLocalContext&) const {
   return css_parsing_utils::ConsumeCommaSeparatedList(
       css_parsing_utils::ConsumeAnimationRange, stream, context,
-      /* default_offset_percent */ 0.0);
+      /* default_offset_percent */ 0.0, /*allow_auto=*/true);
 }
 
 const CSSValue*
@@ -693,7 +693,7 @@ AnimationTriggerExitRangeStart::CSSValueFromComputedStyleInternal(
 }
 
 const CSSValue* AnimationTriggerExitRangeStart::InitialValue() const {
-  return CSSIdentifierValue::Create(CSSValueID::kNormal);
+  return CSSIdentifierValue::Create(CSSValueID::kAuto);
 }
 
 const CSSValue* AnimationTriggerExitRangeEnd::ParseSingleValue(
@@ -702,7 +702,7 @@ const CSSValue* AnimationTriggerExitRangeEnd::ParseSingleValue(
     const CSSParserLocalContext&) const {
   return css_parsing_utils::ConsumeCommaSeparatedList(
       css_parsing_utils::ConsumeAnimationRange, stream, context,
-      /* default_offset_percent */ 100.0);
+      /* default_offset_percent */ 100.0, /*allow_auto=*/true);
 }
 
 const CSSValue* AnimationTriggerExitRangeEnd::CSSValueFromComputedStyleInternal(
@@ -715,7 +715,7 @@ const CSSValue* AnimationTriggerExitRangeEnd::CSSValueFromComputedStyleInternal(
 }
 
 const CSSValue* AnimationTriggerExitRangeEnd::InitialValue() const {
-  return CSSIdentifierValue::Create(CSSValueID::kNormal);
+  return CSSIdentifierValue::Create(CSSValueID::kAuto);
 }
 
 const CSSValue* AnimationTriggerType::InitialValue() const {
@@ -3402,12 +3402,14 @@ void Cursor::ApplyInitial(StyleResolverState& state) const {
   ComputedStyleBuilder& builder = state.StyleBuilder();
   builder.ClearCursorList();
   builder.SetCursor(ComputedStyleInitialValues::InitialCursor());
+  builder.SetCursorIsInherited(false);
 }
 
 void Cursor::ApplyInherit(StyleResolverState& state) const {
   ComputedStyleBuilder& builder = state.StyleBuilder();
   builder.SetCursor(state.ParentStyle()->Cursor());
   builder.SetCursorList(state.ParentStyle()->Cursors());
+  builder.SetCursorIsInherited(true);
 }
 
 void Cursor::ApplyValue(StyleResolverState& state,
@@ -3430,6 +3432,8 @@ void Cursor::ApplyValue(StyleResolverState& state,
   } else {
     builder.SetCursor(To<CSSIdentifierValue>(value).ConvertTo<ECursor>());
   }
+
+  builder.SetCursorIsInherited(false);
 }
 
 const CSSValue* Cx::ParseSingleValue(CSSParserTokenStream& stream,
@@ -6586,19 +6590,20 @@ const CSSValue* MasonryFill::CSSValueFromComputedStyleInternal(
   return CSSIdentifierValue::Create(style.MasonryFill());
 }
 
-const CSSValue* MasonrySlack::ParseSingleValue(
+const CSSValue* ItemTolerance::ParseSingleValue(
     CSSParserTokenStream& stream,
     const CSSParserContext& context,
     const CSSParserLocalContext&) const {
-  return css_parsing_utils::ConsumeMasonrySlack(stream, context);
+  return css_parsing_utils::ConsumeItemTolerance(stream, context);
 }
 
-const CSSValue* MasonrySlack::CSSValueFromComputedStyleInternal(
+const CSSValue* ItemTolerance::CSSValueFromComputedStyleInternal(
     const ComputedStyle& style,
     const LayoutObject*,
     bool allow_visited_style,
     CSSValuePhase value_phase) const {
-  return ComputedStyleUtils::ValueForMasonrySlack(style.MasonrySlack(), style);
+  return ComputedStyleUtils::ValueForItemTolerance(style.ItemTolerance(),
+                                                   style);
 }
 
 const CSSValue* MasonryTemplateTracks::ParseSingleValue(

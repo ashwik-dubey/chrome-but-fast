@@ -33,7 +33,7 @@
 #include "ui/ozone/platform/wayland/common/wayland_util.h"
 #include "ui/ozone/platform/wayland/host/fractional_scale_manager.h"
 #include "ui/ozone/platform/wayland/host/gtk_primary_selection_device_manager.h"
-#include "ui/ozone/platform/wayland/host/gtk_shell1.h"
+#include "ui/ozone/platform/wayland/host/org_kde_kwin_appmenu.h"
 #include "ui/ozone/platform/wayland/host/org_kde_kwin_idle.h"
 #include "ui/ozone/platform/wayland/host/overlay_prioritizer.h"
 #include "ui/ozone/platform/wayland/host/proxy/wayland_proxy_impl.h"
@@ -135,14 +135,6 @@ bool MinSupportedKernelForLinuxDrmSyncobj() {
 
 }  // namespace
 
-void ReportShellUMA(UMALinuxWaylandShell shell) {
-  static std::set<UMALinuxWaylandShell> reported_shells;
-  if (reported_shells.count(shell) > 0)
-    return;
-  base::UmaHistogramEnumeration("Linux.Wayland.Shell", shell);
-  reported_shells.insert(shell);
-}
-
 WaylandConnection::WaylandConnection() = default;
 
 WaylandConnection::~WaylandConnection() = default;
@@ -154,8 +146,8 @@ bool WaylandConnection::Initialize(bool use_threaded_polling) {
                               &FractionalScaleManager::Instantiate);
   RegisterGlobalObjectFactory(GtkPrimarySelectionDeviceManager::kInterfaceName,
                               &GtkPrimarySelectionDeviceManager::Instantiate);
-  RegisterGlobalObjectFactory(GtkShell1::kInterfaceName,
-                              &GtkShell1::Instantiate);
+  RegisterGlobalObjectFactory(OrgKdeKwinAppmenuManager::kInterfaceName,
+                              &OrgKdeKwinAppmenuManager::Instantiate);
   RegisterGlobalObjectFactory(OrgKdeKwinIdle::kInterfaceName,
                               &OrgKdeKwinIdle::Instantiate);
   RegisterGlobalObjectFactory(OverlayPrioritizer::kInterfaceName,
@@ -609,7 +601,6 @@ void WaylandConnection::HandleGlobal(wl_registry* registry,
         .ping = &OnPing,
     };
     xdg_wm_base_add_listener(shell_.get(), &kShellBaseListener, this);
-    ReportShellUMA(UMALinuxWaylandShell::kXdgWmBase);
   } else if (!alpha_compositing_ &&
              (strcmp(interface, "zcr_alpha_compositing_v1") == 0)) {
     alpha_compositing_ = wl::Bind<zcr_alpha_compositing_v1>(
@@ -747,14 +738,6 @@ void WaylandConnection::HandleGlobal(wl_registry* registry,
     if (output_manager_) {
       output_manager_->InitializeAllXdgOutputs();
     }
-  } else if (strcmp(interface, "org_kde_plasma_shell") == 0) {
-    // Recognized but not yet supported.
-    NOTIMPLEMENTED_LOG_ONCE();
-    ReportShellUMA(UMALinuxWaylandShell::kOrgKdePlasmaShell);
-  } else if (strcmp(interface, "zwlr_layer_shell_v1") == 0) {
-    // Recognized but not yet supported.
-    NOTIMPLEMENTED_LOG_ONCE();
-    ReportShellUMA(UMALinuxWaylandShell::kZwlrLayerShellV1);
   }
 
   available_globals_.emplace_back(interface, version);

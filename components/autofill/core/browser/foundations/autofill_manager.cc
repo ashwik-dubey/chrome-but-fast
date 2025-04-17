@@ -20,6 +20,7 @@
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_encoding.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/form_structure_sectioning_util.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/autofill/core/browser/metrics/form_interactions_ukm_logger.h"
 #include "components/autofill/core/browser/metrics/quality_metrics.h"
@@ -141,19 +142,6 @@ void GetMlPredictionsIfNeeded(
 #endif  // BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 
 }  // namespace
-
-// static
-void AutofillManager::LogTypePredictionsAvailable(
-    LogManager* log_manager,
-    const std::vector<raw_ptr<FormStructure, VectorExperimental>>& forms) {
-  LogBuffer buffer(IsLoggingActive(log_manager));
-  for (FormStructure* form : forms) {
-    LOG_AF(buffer) << *form;
-  }
-
-  LOG_AF(log_manager) << LoggingScope::kParsing << LogMessage::kParsedForms
-                      << std::move(buffer);
-}
 
 AutofillManager::AutofillManager(AutofillDriver* driver)
     : driver_(CHECK_DEREF(driver)) {
@@ -297,35 +285,26 @@ void AutofillManager::OnFormsParsed(const std::vector<FormData>& forms) {
   DCHECK(!forms.empty());
   OnBeforeProcessParsedForms();
 
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> non_queryable_forms;
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> queryable_forms;
+  std::vector<raw_ptr<const FormStructure, VectorExperimental>> queryable_forms;
   DenseSet<FormType> form_types;
   for (const FormData& form : forms) {
-    FormStructure* form_structure = FindCachedFormById(form.global_id());
-    if (!form_structure) {
-      NOTREACHED();
-    }
+    const FormStructure& form_structure =
+        CHECK_DEREF(FindCachedFormById(form.global_id()));
 
-    form_types.insert_all(form_structure->GetFormTypes());
+    form_types.insert_all(form_structure.GetFormTypes());
 
     // Configure the query encoding for this form and add it to the appropriate
     // collection of forms: queryable vs non-queryable.
-    if (form_structure->ShouldBeQueried()) {
-      queryable_forms.push_back(form_structure);
-    } else {
-      non_queryable_forms.push_back(form_structure);
+    if (form_structure.ShouldBeQueried()) {
+      queryable_forms.push_back(&form_structure);
     }
 
-    OnFormProcessed(form, *form_structure);
+    OnFormProcessed(form, form_structure);
   }
 
-  // Send the current type predictions to the renderer. For non-queryable forms
-  // this is all the information about them that will ever be available. The
-  // queryable forms will be updated once the field type query is complete.
-  driver().SendTypePredictionsToRenderer(non_queryable_forms);
-  driver().SendTypePredictionsToRenderer(queryable_forms);
-  LogTypePredictionsAvailable(log_manager(), non_queryable_forms);
-  LogTypePredictionsAvailable(log_manager(), queryable_forms);
+  if (base::FeatureList::IsEnabled(features::test::kShowDomNodeIDs)) {
+    driver().ExposeDomNodeIDs();
+  }
 
   // Query the server if at least one of the forms was parsed.
   if (!queryable_forms.empty()) {
@@ -590,6 +569,7 @@ void AutofillManager::ParseFormsAsync(
 
     auto form_structure = std::make_unique<FormStructure>(form_data);
     if (!form_structure->ShouldBeParsed(log_manager())) {
+      LogCurrentFieldTypes(*form_structure);
       continue;
     }
 
@@ -653,6 +633,7 @@ void AutofillManager::ParseFormAsync(
 
   auto form_structure = std::make_unique<FormStructure>(form_data);
   if (!form_structure->ShouldBeParsed(log_manager())) {
+    LogCurrentFieldTypes(*form_structure);
     // For Autocomplete, events need to be handled even for forms that cannot be
     // parsed.
     std::move(callback).Run(*this, form_data);
@@ -738,10 +719,13 @@ void AutofillManager::ParseFormsAsyncCommon(
           context.log_manager->Flush(*self->log_manager());
         }
         for (auto& form_structure : context.form_structures) {
-          FormGlobalId id = form_structure->global_id();
-          self->form_structures_[id] = std::move(form_structure);
+          FormStructure* raw_form_structure = form_structure.get();
+          self->form_structures_[raw_form_structure->global_id()] =
+              std::move(form_structure);
+          self->LogCurrentFieldTypes(*raw_form_structure);
           self->NotifyObservers(
-              &Observer::OnFieldTypesDetermined, id,
+              &Observer::OnFieldTypesDetermined,
+              raw_form_structure->global_id(),
               Observer::FieldTypeSource::kHeuristicsOrAutocomplete);
         }
         std::move(callback).Run(*self);
@@ -834,23 +818,31 @@ void AutofillManager::OnLoadedServerPredictions(
       response->queried_form_signatures, log_manager());
 
   OnLoadedServerPredictionsImpl(queried_forms);
-
-  // Will log quality metrics for each FormStructure based on the presence of
-  // autocomplete attributes, if available.
-  for (FormStructure* cur_form : queried_forms) {
-    autofill_metrics::LogQualityMetricsBasedOnAutocomplete(
-        *cur_form, client().GetFormInteractionsUkmLogger(),
-        driver().GetPageUkmSourceId());
+  if (base::FeatureList::IsEnabled(features::test::kShowDomNodeIDs)) {
+    driver().ExposeDomNodeIDs();
   }
 
-  // Send field type predictions to the renderer so that it can possibly
-  // annotate forms with the predicted types or add console warnings.
-  driver().SendTypePredictionsToRenderer(queried_forms);
-  LogTypePredictionsAvailable(log_manager(), queried_forms);
+  for (const raw_ptr<FormStructure, VectorExperimental> form : queried_forms) {
+    form->RationalizeAndAssignSections(log_manager(), /*legacy_order=*/true);
 
-  for (const FormStructure* form : queried_forms) {
+    autofill_metrics::LogQualityMetricsBasedOnAutocomplete(
+        *form, client().GetFormInteractionsUkmLogger(),
+        driver().GetPageUkmSourceId());
+    LogCurrentFieldTypes(*form);
+
     NotifyObservers(&Observer::OnFieldTypesDetermined, form->global_id(),
                     Observer::FieldTypeSource::kAutofillServer);
+  }
+}
+
+void AutofillManager::LogCurrentFieldTypes(const FormStructure& form) {
+  LogBuffer buffer(IsLoggingActive(log_manager()));
+  LOG_AF(buffer) << form;
+  LOG_AF(log_manager()) << LoggingScope::kParsing << LogMessage::kParsedForms
+                        << std::move(buffer);
+  if (base::FeatureList::IsEnabled(
+          features::test::kAutofillShowTypePredictions)) {
+    driver().SendTypePredictionsToRenderer(form);
   }
 }
 

@@ -21,6 +21,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/not_fatal_until.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/services/storage/public/cpp/quota_client_callback_wrapper.h"
 #include "content/browser/log_console_message.h"
@@ -1128,6 +1129,14 @@ int ServiceWorkerContextCore::GetVersionFailureCount(int64_t version_id) {
   return it->second.count;
 }
 
+void ServiceWorkerContextCore::NotifyWillCreateURLLoaderFactory(
+    const GURL& scope) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  for (auto& observer : sync_observer_list_->observers) {
+    observer.OnWillCreateURLLoaderFactory(scope);
+  }
+}
+
 void ServiceWorkerContextCore::NotifyRegistrationStored(
     int64_t registration_id,
     const GURL& scope,
@@ -1219,6 +1228,16 @@ void ServiceWorkerContextCore::OnControlleeNavigationCommitted(
       FROM_HERE,
       &ServiceWorkerContextCoreObserver::OnControlleeNavigationCommitted,
       version->version_id(), client_uuid, render_frame_host_id);
+}
+
+void ServiceWorkerContextCore::OnStartWorkerMessageSent(
+    ServiceWorkerVersion* version) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK_EQ(this, version->context().get());
+
+  for (auto& observer : sync_observer_list_->observers) {
+    observer.OnStartWorkerMessageSent(version->version_id(), version->scope());
+  }
 }
 
 void ServiceWorkerContextCore::OnRunningStateChanged(

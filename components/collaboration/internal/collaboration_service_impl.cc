@@ -36,6 +36,8 @@ using Flow = CollaborationController::Flow;
 using metrics::CollaborationServiceJoinEvent;
 using metrics::CollaborationServiceShareOrManageEvent;
 using Outcome = signin::AccountManagedStatusFinder::Outcome;
+using ParseUrlResult = data_sharing::DataSharingService::ParseUrlResult;
+using ParseUrlStatus = data_sharing::DataSharingService::ParseUrlStatus;
 
 CollaborationServiceImpl::CollaborationServiceImpl(
     tab_groups::TabGroupSyncService* tab_group_sync_service,
@@ -78,10 +80,8 @@ void CollaborationServiceImpl::RemoveObserver(
 
 void CollaborationServiceImpl::StartJoinFlow(
     std::unique_ptr<CollaborationControllerDelegate> delegate,
-    const GURL& url,
-    CollaborationServiceJoinEntryPoint entry) {
-  metrics::RecordJoinEntryPoint(data_sharing_service_->GetLogger(), entry);
-  const data_sharing::DataSharingService::ParseUrlResult parse_result =
+    const GURL& url) {
+  const ParseUrlResult parse_result =
       data_sharing_service_->ParseDataSharingUrl(url);
 
   GroupToken token;
@@ -104,23 +104,42 @@ void CollaborationServiceImpl::StartShareOrManageFlow(
     std::unique_ptr<CollaborationControllerDelegate> delegate,
     const tab_groups::EitherGroupID& either_id,
     CollaborationServiceShareOrManageEntryPoint entry) {
-  auto it = share_controllers_.find(either_id);
-  if (it != share_controllers_.end()) {
+  metrics::RecordShareOrManageEntryPoint(data_sharing_service_->GetLogger(),
+                                         entry);
+  auto it = collaboration_controllers_.find(either_id);
+  if (it != collaboration_controllers_.end()) {
     it->second->delegate()->PromoteCurrentScreen();
     return;
   }
 
-  CancelAllFlows(base::BindOnce(
-      &CollaborationServiceImpl::StartShareOrManageFlowInternal,
-      weak_ptr_factory_.GetWeakPtr(), std::move(delegate), either_id));
+  CancelAllFlows(
+      base::BindOnce(&CollaborationServiceImpl::StartCollaborationFlowInternal,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(delegate),
+                     either_id, FlowType::kShareOrManage));
 
   RecordShareOrManageEvent(data_sharing_service_->GetLogger(),
                            CollaborationServiceShareOrManageEvent::kStarted);
 }
 
+void CollaborationServiceImpl::StartLeaveOrDeleteFlow(
+    std::unique_ptr<CollaborationControllerDelegate> delegate,
+    const tab_groups::EitherGroupID& either_id,
+    CollaborationServiceLeaveOrDeleteEntryPoint entry) {
+  auto it = collaboration_controllers_.find(either_id);
+  if (it != collaboration_controllers_.end()) {
+    it->second->delegate()->PromoteCurrentScreen();
+    return;
+  }
+
+  CancelAllFlows(
+      base::BindOnce(&CollaborationServiceImpl::StartCollaborationFlowInternal,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(delegate),
+                     either_id, FlowType::kLeaveOrDelete));
+}
+
 void CollaborationServiceImpl::CancelAllFlows(
     base::OnceCallback<void()> finish_callback) {
-  if (join_controllers_.empty() && share_controllers_.empty()) {
+  if (join_controllers_.empty() && collaboration_controllers_.empty()) {
     // Don't post task if we can already start the flow.
     std::move(finish_callback).Run();
     return;
@@ -129,7 +148,7 @@ void CollaborationServiceImpl::CancelAllFlows(
   for (const auto& [token, controller] : join_controllers_) {
     controller->Cancel();
   }
-  for (const auto& [id, controller] : share_controllers_) {
+  for (const auto& [id, controller] : collaboration_controllers_) {
     controller->Cancel();
   }
 
@@ -210,6 +229,31 @@ void CollaborationServiceImpl::LeaveGroup(
                      std::move(callback)));
 }
 
+bool CollaborationServiceImpl::ShouldInterceptNavigationForShareURL(
+    const GURL& url) {
+  ParseUrlResult result = data_sharing_service_->ParseDataSharingUrl(url);
+  if (result.has_value()) {
+    return true;
+  }
+  switch (result.error()) {
+    case ParseUrlStatus::kUnknown:
+    case ParseUrlStatus::kHostOrPathMismatchFailure:
+      return false;
+    case ParseUrlStatus::kQueryMissingFailure:
+    case ParseUrlStatus::kSuccess:
+      return true;
+  }
+}
+
+void CollaborationServiceImpl::HandleShareURLNavigationIntercepted(
+    const GURL& url,
+    std::unique_ptr<data_sharing::ShareURLInterceptionContext> context,
+    CollaborationServiceJoinEntryPoint entry) {
+  metrics::RecordJoinEntryPoint(data_sharing_service_->GetLogger(), entry);
+  data_sharing_service_->HandleShareURLNavigationIntercepted(
+      url, std::move(context));
+}
+
 const std::map<data_sharing::GroupToken,
                std::unique_ptr<CollaborationController>>&
 CollaborationServiceImpl::GetJoinControllersForTesting() {
@@ -224,11 +268,11 @@ void CollaborationServiceImpl::FinishJoinFlow(
   }
 }
 
-void CollaborationServiceImpl::FinishShareFlow(
+void CollaborationServiceImpl::FinishCollaborationFlow(
     const tab_groups::EitherGroupID& group_id) {
-  auto it = share_controllers_.find(group_id);
-  if (it != share_controllers_.end()) {
-    share_controllers_.erase(it);
+  auto it = collaboration_controllers_.find(group_id);
+  if (it != collaboration_controllers_.end()) {
+    collaboration_controllers_.erase(it);
   }
 }
 
@@ -291,7 +335,9 @@ CollaborationStatus CollaborationServiceImpl::GetCollaborationStatus() {
   }
 
   // Disable for automotive users.
-  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_AUTOMOTIVE) {
+  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_AUTOMOTIVE &&
+      !base::FeatureList::IsEnabled(
+          data_sharing::features::kCollaborationAutomotive)) {
     return CollaborationStatus::kDisabled;
   }
 
@@ -378,17 +424,18 @@ void CollaborationServiceImpl::StartJoinFlowInternal(
                           weak_ptr_factory_.GetWeakPtr(), token))});
 }
 
-void CollaborationServiceImpl::StartShareOrManageFlowInternal(
+void CollaborationServiceImpl::StartCollaborationFlowInternal(
     std::unique_ptr<CollaborationControllerDelegate> delegate,
-    const tab_groups::EitherGroupID& group_id) {
-  share_controllers_.insert(
-      {group_id,
+    const tab_groups::EitherGroupID& either_id,
+    FlowType type) {
+  collaboration_controllers_.insert(
+      {either_id,
        std::make_unique<CollaborationController>(
-           Flow(FlowType::kShareOrManage, group_id), this,
-           data_sharing_service_.get(), tab_group_sync_service_.get(),
-           sync_service_.get(), identity_manager_.get(), std::move(delegate),
-           base::BindOnce(&CollaborationServiceImpl::FinishShareFlow,
-                          weak_ptr_factory_.GetWeakPtr(), group_id))});
+           Flow(type, either_id), this, data_sharing_service_.get(),
+           tab_group_sync_service_.get(), sync_service_.get(),
+           identity_manager_.get(), std::move(delegate),
+           base::BindOnce(&CollaborationServiceImpl::FinishCollaborationFlow,
+                          weak_ptr_factory_.GetWeakPtr(), either_id))});
 }
 
 void CollaborationServiceImpl::OnCollaborationGroupRemoved(

@@ -40,6 +40,7 @@
 #include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/hats/hats_service_factory.h"
 #include "chrome/browser/ui/hats/survey_config.h"
+#include "chrome/browser/ui/views/side_panel/customize_chrome/customize_chrome_utils.h"
 #include "chrome/browser/ui/webui/cr_components/theme_color_picker/customize_chrome_colors.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/wallpaper_search/wallpaper_search_string_map.h"
 #include "chrome/common/chrome_features.h"
@@ -256,6 +257,7 @@ void WallpaperSearchHandler::GetDescriptors(GetDescriptorsCallback callback) {
       GURL(base::StrCat({kGstaticBaseURL, "descriptors_en-US.json"}));
   resource_request->request_initiator =
       url::Origin::Create(GURL(chrome::kChromeUINewTabURL));
+  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   descriptors_simple_url_loader_ = network::SimpleURLLoader::Create(
       std::move(resource_request), traffic_annotation);
   descriptors_simple_url_loader_->SetRetryOptions(
@@ -442,6 +444,7 @@ void WallpaperSearchHandler::SetBackgroundToWallpaperSearchResult(
   }
   wallpaper_search_background_manager_->SelectLocalBackgroundImage(
       result_id, bitmap, /*is_inspiration_image=*/false, base::ElapsedTimer());
+  customize_chrome::MaybeDisableExtensionOverridingNtp(profile_);
 }
 
 void WallpaperSearchHandler::SetBackgroundToInspirationImage(
@@ -805,6 +808,7 @@ void WallpaperSearchHandler::OnInspirationImageDecoded(
   inspiration_token_ = id;
   wallpaper_search_background_manager_->SelectLocalBackgroundImage(
       id, image.AsBitmap(), /*is_inspiration_image=*/true, std::move(timer));
+  customize_chrome::MaybeDisableExtensionOverridingNtp(profile_);
 }
 
 void WallpaperSearchHandler::OnInspirationsRetrieved(
@@ -951,6 +955,7 @@ void WallpaperSearchHandler::SelectHistoryImage(
   }
   wallpaper_search_background_manager_->SelectHistoryImage(id, image,
                                                            std::move(timer));
+  customize_chrome::MaybeDisableExtensionOverridingNtp(profile_);
 }
 
 void WallpaperSearchHandler::OnWallpaperSearchResultsRetrieved(

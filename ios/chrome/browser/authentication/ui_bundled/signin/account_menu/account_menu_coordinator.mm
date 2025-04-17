@@ -21,6 +21,7 @@
 #import "ios/chrome/app/change_profile_commands.h"
 #import "ios/chrome/app/profile/profile_state.h"
 #import "ios/chrome/browser/authentication/ui_bundled/authentication_flow/authentication_flow.h"
+#import "ios/chrome/browser/authentication/ui_bundled/continuation.h"
 #import "ios/chrome/browser/authentication/ui_bundled/signin/account_menu/account_menu_constants.h"
 #import "ios/chrome/browser/authentication/ui_bundled/signin/account_menu/account_menu_mediator.h"
 #import "ios/chrome/browser/authentication/ui_bundled/signin/account_menu/account_menu_mediator_delegate.h"
@@ -94,21 +95,27 @@
   base::ScopedClosureRunner _activityOverlayCallback;
   // The child signin coordinator if it’s open. It may be presented by the
   // Manage Account’s coordinator view controller.
-  SigninCoordinator* _signinCoordinator;
+  SigninCoordinator<InterruptibleChromeCoordinator>* _signinCoordinator;
   // Clicked view, used to anchor the menu to it when using
   // UIModalPresentationPopover mode
   UIView* _anchorView;
+  // Whether this account menu was triggered from the web.
+  BOOL _fromWeb;
 }
 
 - (instancetype)initWithBaseViewController:(UIViewController*)viewController
                                    browser:(Browser*)browser
-                                anchorView:(UIView*)anchorView {
+                              contextStyle:(SigninContextStyle)contextStyle
+                                anchorView:(UIView*)anchorView
+                                   fromWeb:(BOOL)fromWeb {
   self = [super
       initWithBaseViewController:viewController
                          browser:browser
+                    contextStyle:contextStyle
                      accessPoint:signin_metrics::AccessPoint::kAccountMenu];
   if (self) {
     _anchorView = anchorView;
+    _fromWeb = fromWeb;
   }
   return self;
 }
@@ -155,7 +162,8 @@
                                  accountManagerService:_accountManagerService
                                            authService:_authenticationService
                                        identityManager:_identityManager
-                                                 prefs:prefs];
+                                                 prefs:prefs
+                                               fromWeb:_fromWeb];
   _mediator.delegate = self;
   _mediator.consumer = _viewController;
   _viewController.mutator = _mediator;
@@ -222,7 +230,7 @@
 }
 
 - (void)didTapManageAccounts {
-  CHECK(!_manageAccountsCoordinator, base::NotFatalUntil::M133);
+  CHECK(!_manageAccountsCoordinator);
   _manageAccountsCoordinator = [[ManageAccountsCoordinator alloc]
       initWithBaseViewController:_navigationController
                          browser:self.browser
@@ -244,7 +252,7 @@
 }
 
 - (void)signOutFromTargetRect:(CGRect)targetRect
-                   completion:(void (^)(BOOL))completion {
+                   completion:(signin_ui::SignoutCompletionCallback)completion {
   if (!_authenticationService->HasPrimaryIdentity(
           signin::ConsentLevel::kSignin)) {
     // This could happen in very rare cases, if the account somehow got removed
@@ -262,10 +270,10 @@
                             view:_viewController.view
         forceSnackbarOverToolbar:YES
                       withSource:metricSignOut
-                      completion:^(BOOL success) {
+                      completion:^(BOOL success, SceneState* scene_state) {
                         [weakSelf stopSignoutActionSheetCoordinator];
                         if (completion) {
-                          completion(success);
+                          completion(success, scene_state);
                         }
                       }];
   [_signoutActionSheetCoordinator start];
@@ -386,8 +394,11 @@
       primaryAccountReauthCoordinatorWithBaseViewController:
           _navigationController
                                                     browser:self.browser
+                                               contextStyle:self.contextStyle
                                                 accessPoint:accessPoint
-                                                promoAction:promoAction];
+                                                promoAction:promoAction
+                                       continuationProvider:
+                                           DoNothingContinuationProvider()];
   [self startSigninCoordinatorWithCompletion:nil];
 }
 
@@ -403,7 +414,7 @@
 
 - (void)manageAccountsCoordinatorWantsToBeStopped:
     (ManageAccountsCoordinator*)coordinator {
-  CHECK_EQ(coordinator, _manageAccountsCoordinator, base::NotFatalUntil::M133);
+  CHECK_EQ(coordinator, _manageAccountsCoordinator);
   [self stopManageAccountsCoordinator];
 }
 
@@ -448,7 +459,10 @@
   _signinCoordinator = [SigninCoordinator
       addAccountCoordinatorWithBaseViewController:baseViewController
                                           browser:self.browser
-                                      accessPoint:self.accessPoint];
+                                     contextStyle:self.contextStyle
+                                      accessPoint:self.accessPoint
+                             continuationProvider:
+                                 DoNothingContinuationProvider()];
   [self startSigninCoordinatorWithCompletion:completion];
 }
 

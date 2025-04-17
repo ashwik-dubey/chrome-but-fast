@@ -261,6 +261,7 @@
 <translation id="2010008505735295285">Uuesti laadimine</translation>
 <translation id="2015722694326466240">Paroolide nägemiseks peate oma seadmes esmalt pääsukoodi seadistama.</translation>
 <translation id="201759455285471444">Vahelehegrupi laiendamine.</translation>
+<translation id="202070562065520783">Selgita seda mulle</translation>
 <translation id="2021670401941426298">Vaadake oma otsingumootori juhiseid otsinguajaloo kustutamise kohta, kui see on asjakohane.</translation>
 <translation id="2044394949148788042">Avage vahelehtede ruudustik</translation>
 <translation id="20485545164632846">uus üksus</translation>
@@ -480,6 +481,7 @@ Teie otsingumootor on <ph name="DSE_NAME" />. Vaadake selle juhiseid otsinguajal
 <translation id="2952278131021475699">Lensi kaameraotsing</translation>
 <translation id="2962516096219646456">Kuva kõik automaattäite andmed</translation>
 <translation id="2969979262385602596">Sisselogimine ebaõnnestus. Proovige hiljem uuesti.</translation>
+<translation id="297667759942911166">Vahelehegruppides koos töötamine</translation>
 <translation id="2989523299700148168">Hiljuti külastatud</translation>
 <translation id="2989805286512600854">Ava uuel vahelehel</translation>
 <translation id="2996291259634659425">Parooli loomine</translation>
@@ -525,6 +527,7 @@ Vaadake oma otsingumootori juhiseid otsinguajaloo kustutamise kohta, kui see on 
 <translation id="3167868116600277716">Discoveri voog</translation>
 <translation id="3169472444629675720">Discover</translation>
 <translation id="3174662312949010067">Oma salvestatud paroole saate kasutada ka muudes seadmetes.</translation>
+<translation id="3177338796769255211">Logige sisse, et saada kõigis oma seadmetes juurdepääs oma järjehoidjatele ja muule</translation>
 <translation id="3181954750937456830">Ohutu sirvimine (kaitseb teid ja teie seadet ohtlike saitide eest)</translation>
 <translation id="3190736958609431397">Peata jälgimine</translation>
 <translation id="3208260410153224535">Teie organisatsioon on sisselogimise välja lülitanud. Uued järjehoidjad, paroolid ja muu sisu salvestatakse ainult sellesse seadmesse.</translation>
@@ -1125,6 +1128,7 @@ Handoff peab olema lubatud seadete jaotises General ja seadmed peavad kasutama s
 <translation id="573974402615125334">Vahelehegruppide jagamiseks, nendega liitumiseks ning nendes koos töötamiseks sünkroonige oma ajalugu ja vahelehed</translation>
 <translation id="5740123193752401435">Otsige vahelehtedelt …</translation>
 <translation id="5744274077973758795">Funktsiooni <ph name="FEATURE_NAME" /> märguanded on sisse lülitatud</translation>
+<translation id="5745598824054949526">Teksti ei leitud</translation>
 <translation id="574762237186762643">Sündmused</translation>
 <translation id="5749158352074143502">Jätka selle vahekaardiga</translation>
 <translation id="5753021559215751319">Salvesta parool</translation>
@@ -1288,6 +1292,7 @@ Handoff peab olema lubatud seadete jaotises General ja seadmed peavad kasutama s
 <translation id="6410883413783534063">Avage vahelehti, et samal ajal eri lehti külastada</translation>
 <translation id="6416807286621280684">Teie jälgitavad pakid ja tarnevärskendused.</translation>
 <translation id="6418346271604475326">PDF-i ettevalm.</translation>
+<translation id="6421038304268477484">Tõlgitud tekst</translation>
 <translation id="6429213933892582367">Avage jaotis Paroolivalikud.</translation>
 <translation id="6434591244308415567">Ilmnes viga. Proovige hiljem uuesti.</translation>
 <translation id="6435307030888827407">Jää väljalogituks</translation>
@@ -1855,6 +1860,7 @@ Saidid saavad küpsisefailide abil eri saitidel teie sirvimistegevust jälgida, 
 <translation id="8697136149718343437">Nihuta aadressiriba allserva</translation>
 <translation id="8703372953981978786">See link ei toimi</translation>
 <translation id="8706253136355675497">Temperatuur</translation>
+<translation id="8706806585855470492">Vahelehegruppe saate jagada, nendega liituda ja neis koostööd teha</translation>
 <translation id="8709409604518538305">Vahelehed suleti</translation>
 <translation id="8712534545803964353">Lehelt otsimine …</translation>
 <translation id="8712637175834984815">Selge</translation>
@@ -1966,6 +1972,7 @@ Saidid saavad küpsisefailide abil eri saitidel teie sirvimistegevust jälgida, 
 <translation id="9097506547406246598">Ei saa jälgimist lõpetada. Midagi läks valesti.</translation>
 <translation id="9098541895599151034">Kas kustutada <ph name="NUMBER_OF_ACCOUNTS" /> parooli?</translation>
 <translation id="9099233023029360602">Küsi iga kord, millist kontot kasutada</translation>
+<translation id="9099821309562615674">Veenduge, et tõlgitav tekst oleks selge ja asuks kaadris.</translation>
 <translation id="9100610230175265781">Parool on vajalik</translation>
 <translation id="91023216973987714">Makseviisid</translation>
 <translation id="9106655997975673326">Seadmest <ph name="SOURCE_DEVICE" /></translation>

@@ -118,6 +118,9 @@ BASE_FEATURE(kIPHLensOverlayTranslateButtonFeature,
 BASE_FEATURE(kIPHTabAudioMutingFeature,
              "IPH_TabAudioMuting",
              base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHPasswordsSavePrimingPromoFeature,
+             "IPH_PasswordsSavePrimingPromo",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHPasswordsManagementBubbleAfterSaveFeature,
              "IPH_PasswordsManagementBubbleAfterSave",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -262,6 +265,18 @@ BASE_FEATURE(kIPHAdaptiveButtonInTopToolbarCustomizationAddToBookmarksFeature,
              base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHAdaptiveButtonInTopToolbarCustomizationReadAloudFeature,
              "IPH_AdaptiveButtonInTopToolbarCustomization_ReadAloud",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHAdaptiveButtonInTopToolbarCustomizationPageSummaryWebFeature,
+             "IPH_AdaptiveButtonInTopToolbarCustomization_PageSummary_Web",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHAdaptiveButtonInTopToolbarCustomizationPageSummaryPdfFeature,
+             "IPH_AdaptiveButtonInTopToolbarCustomization_PageSummary_Pdf",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHPageSummaryWebMenuFeature,
+             "IPH_PageSummaryWebMenu",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHPageSummaryPdfMenuFeature,
+             "IPH_PageSummaryPdfMenu",
              base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHAppSpecificHistory,
              "IPH_AppSpecificHistory",
@@ -431,6 +446,9 @@ BASE_FEATURE(kIPHTabGroupShareNoticeFeature,
 BASE_FEATURE(kIPHTabGroupShareNotificationBubbleOnStripFeature,
              "IPH_TabGroupSharedNotificationBubbleOnStrip",
              base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kIPHTabGroupShareUpdateFeature,
+             "IPH_TabGroupShareUpdate",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kIPHTabGroupsRemoteGroupFeature,
              "IPH_TabGroupsRemoteGroup",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -684,6 +702,11 @@ BASE_FEATURE(kIPHiOSReminderNotificationsOverflowMenuNewBadgeFeature,
 // enabled.
 BASE_FEATURE(kIPHiOSSettingsInOverflowMenuBubbleFeature,
              "IPH_iOSSettingsInOverflowMenuBubbleFeature",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+// Note: This IPH will only be triggered if
+// `kSeparateProfilesForManagedAccounts` is enabled.
+BASE_FEATURE(kIPHiOSSwitchAccountsWithNTPAccountParticleDiscFeature,
+             "IPH_iOSSwitchAccountsWithNTPAccountParticleDiscFeature",
              base::FEATURE_ENABLED_BY_DEFAULT);
 // Note: Feed swipe IPHs will only be triggered if `kFeedSwipeInProductHelp` is
 // enabled.

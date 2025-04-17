@@ -27,4 +27,10 @@ extern const char kReaderModeDistillerPageLoadDelayDurationStringName[];
 // Returns the delay time before triggering Reader Mode on page load.
 const base::TimeDelta ReaderModeDistillerPageLoadDelay();
 
+// Returns whether the Reader Mode feature is available.
+bool IsReaderModeAvailable();
+
+// Returns whether the Reader Mode snackbar is enabled.
+bool IsReaderModeSnackbarEnabled();
+
 #endif  // IOS_CHROME_BROWSER_READER_MODE_MODEL_FEATURES_H_

@@ -184,14 +184,20 @@ public class AutofillProfilesFragment extends ChromeBaseSettingsFragment
 
         for (AutofillProfile profile : personalDataManager.getProfilesForSettings()) {
             // Add a preference for the profile.
-            Preference pref = new AutofillProfileEditorPreference(getStyledContext());
+            AutofillProfileEditorPreference pref =
+                    new AutofillProfileEditorPreference(getStyledContext());
             pref.setTitle(profile.getInfo(FieldType.NAME_FULL));
             pref.setSummary(profile.getLabel());
             pref.setKey(pref.getTitle().toString()); // For testing.
-            if (shouldShowLocalProfileIcon(profile)) {
-                // Conditionally set local profile icon for address profiles that are neither
-                // synced, nor saved in the account.
-                pref.setWidgetLayoutResource(R.layout.autofill_local_profile_icon);
+
+            // Conditionally show local profile icon for address profiles that are neither synced,
+            // nor saved in the account.
+            pref.setShouldShowLocalProfileIcon(shouldShowLocalProfileIcon(profile));
+            pref.setRecordType(profile.getRecordType());
+            pref.setWidgetLayoutResource(R.layout.autofill_settings_profile_icons);
+            if (ChromeFeatureList.isEnabled(
+                    ChromeFeatureList.AUTOFILL_ENABLE_SUPPORT_FOR_HOME_AND_WORK)) {
+                pref.setIcon(getIconIdForProfile(profile));
             }
             Bundle args = pref.getExtras();
             args.putString(AutofillEditorBase.AUTOFILL_GUID, profile.getGUID());
@@ -322,5 +328,16 @@ public class AutofillProfilesFragment extends ChromeBaseSettingsFragment
 
     EditorDialogView getEditorDialogForTest() {
         return mAddressEditor.getEditorDialogForTesting();
+    }
+
+    private int getIconIdForProfile(AutofillProfile profile) {
+        switch (profile.getRecordType()) {
+            case RecordType.ACCOUNT_HOME:
+                return R.drawable.home_logo;
+            case RecordType.ACCOUNT_WORK:
+                return R.drawable.work_logo;
+            default:
+                return R.drawable.location_on_logo;
+        }
     }
 }

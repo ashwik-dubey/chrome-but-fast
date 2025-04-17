@@ -7,6 +7,9 @@
 #include <memory>
 
 #include "base/no_destructor.h"
+#include "chrome/browser/privacy_sandbox/notice/notice_catalog.h"
+#include "chrome/browser/privacy_sandbox/notice/notice_service.h"
+#include "chrome/browser/privacy_sandbox/notice/notice_storage.h"
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 
@@ -16,9 +19,9 @@ PrivacySandboxNoticeServiceFactory::GetInstance() {
   return instance.get();
 }
 
-privacy_sandbox::PrivacySandboxNoticeService*
+privacy_sandbox::PrivacySandboxNoticeServiceInterface*
 PrivacySandboxNoticeServiceFactory::GetForProfile(Profile* profile) {
-  return static_cast<privacy_sandbox::PrivacySandboxNoticeService*>(
+  return static_cast<privacy_sandbox::PrivacySandboxNoticeServiceInterface*>(
       GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
@@ -32,5 +35,6 @@ PrivacySandboxNoticeServiceFactory::BuildServiceInstanceForBrowserContext(
     content::BrowserContext* context) const {
   Profile* profile = Profile::FromBrowserContext(context);
   return std::make_unique<privacy_sandbox::PrivacySandboxNoticeService>(
-      profile);
+      profile, std::make_unique<privacy_sandbox::NoticeCatalogImpl>(),
+      std::make_unique<privacy_sandbox::PrivacySandboxNoticeStorage>());
 }

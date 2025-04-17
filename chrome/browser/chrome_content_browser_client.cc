@@ -351,6 +351,7 @@
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/overlay_window.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_isolation_mode.h"
@@ -641,6 +642,8 @@
 #include "chrome/browser/enterprise/profile_management/oidc_auth_response_capture_navigation_throttle.h"
 #include "chrome/browser/enterprise/profile_management/profile_management_navigation_throttle.h"
 #include "chrome/browser/enterprise/signin/managed_profile_required_navigation_throttle.h"
+#include "chrome/browser/enterprise/webstore/chrome_web_store_navigation_throttle.h"
+#include "chrome/browser/enterprise/webstore/features.h"
 #include "chrome/browser/ui/webui/app_settings/web_app_settings_navigation_throttle.h"
 #endif
 
@@ -806,6 +809,7 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/feed/feed_service_factory.h"
+#include "chrome/browser/safe_browsing/advanced_protection_status_manager_android.h"
 #include "components/feed/feed_feature_list.h"
 #endif  // BUILDFLAG(IS_ANDROID)
 
@@ -848,6 +852,10 @@ using web_apps::ChromeContentBrowserClientIsolatedWebAppsPart;
 namespace {
 
 const char kAIManagerUserDataKey[] = "ai_manager";
+
+// Whether to disable caching of the advanced-protection state in
+// ShouldEnableStrictSiteIsolation().
+bool g_disable_advanced_protection_caching_for_tests = false;
 
 BASE_FEATURE(kSkipPagehideInCommitForDSENavigation,
              "SkipPagehideInCommitForDSENavigation",
@@ -1677,6 +1685,11 @@ void ChromeContentBrowserClient::SetApplicationLocale(
       FROM_HERE, base::BindOnce(&SetApplicationLocaleOnIOThread, locale));
 }
 
+// static
+void ChromeContentBrowserClient::DisableAdvancedProtectionCachingForTests() {
+  g_disable_advanced_protection_caching_for_tests = true;
+}
+
 void ChromeContentBrowserClient::MaybeProxyNetworkBoundRequest(
     content::BrowserContext* browser_context,
     net::handles::NetworkHandle bound_network,
@@ -2208,7 +2221,7 @@ std::string ChromeContentBrowserClient::GetSiteDisplayNameForCdmProcess(
   // By default, use the |site_url| spec as the display name.
   std::string name = site_url.spec();
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   // If |site_url| wraps a chrome extension ID, we can display the extension
   // name instead, which is more human-readable.
   if (site_url.SchemeIs(extensions::kExtensionScheme)) {
@@ -2219,7 +2232,7 @@ std::string ChromeContentBrowserClient::GetSiteDisplayNameForCdmProcess(
     if (extension)
       name = extension->name();
   }
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 
   return name;
 }
@@ -2560,7 +2573,27 @@ ChromeContentBrowserClient::GetOriginsRequiringDedicatedProcess() {
 }
 
 bool ChromeContentBrowserClient::ShouldEnableStrictSiteIsolation() {
-  return base::FeatureList::IsEnabled(features::kSitePerProcess);
+  if (base::FeatureList::IsEnabled(features::kSitePerProcess)) {
+    return true;
+  }
+
+#if BUILDFLAG(IS_ANDROID)
+  // Minimum memory requirements are checked in ShouldDisableSiteIsolation().
+  // See crbug.com/395862563
+
+  if (g_disable_advanced_protection_caching_for_tests) {
+    return safe_browsing::AdvancedProtectionStatusManagerAndroid::
+        QueryIsUnderAdvancedProtection();
+  }
+  // Don't change ShouldEnableStrictSiteIsolation() return value at runtime. A
+  // restart is needed to update site isolation mode when the Advanced
+  // Protection state changes.
+  static bool g_in_os_advanced_protection_mode = safe_browsing::
+      AdvancedProtectionStatusManagerAndroid::QueryIsUnderAdvancedProtection();
+  return g_in_os_advanced_protection_mode;
+#else
+  return false;
+#endif
 }
 
 bool ChromeContentBrowserClient::ShouldDisableSiteIsolation(
@@ -5499,6 +5532,13 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
   MaybeAddThrottle(
       ManagedProfileRequiredNavigationThrottle::MaybeCreateThrottleFor(handle),
       &throttles);
+
+  if (base::FeatureList::IsEnabled(
+          enterprise::webstore::kChromeWebStoreNavigationThrottle)) {
+    throttles.push_back(
+        std::make_unique<enterprise_webstore::ChromeWebStoreNavigationThrottle>(
+            handle));
+  }
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || \
@@ -6188,9 +6228,7 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
 
 std::vector<std::unique_ptr<blink::URLLoaderThrottle>>
 ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
-    const network::ResourceRequest& request,
     content::BrowserContext* browser_context,
-    const base::RepeatingCallback<content::WebContents*()>& wc_getter,
     content::FrameTreeNodeId frame_tree_node_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
@@ -6199,15 +6237,6 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
   DCHECK(browser_context);
   Profile* profile = Profile::FromBrowserContext(browser_context);
   DCHECK(profile);
-
-#if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
-  if (auto safe_browsing_throttle = MaybeCreateSafeBrowsingURLLoaderThrottle(
-          request, browser_context, wc_getter, frame_tree_node_id,
-          /*navigation_id=*/std::nullopt, profile);
-      safe_browsing_throttle) {
-    result.push_back(std::move(safe_browsing_throttle));
-  }
-#endif
 
 #if BUILDFLAG(IS_ANDROID)
   auto [client_data_header, unused_is_custom_tab] =
@@ -7205,17 +7234,16 @@ ChromeContentBrowserClient::CreateWindowForVideoPictureInPicture(
   return content::VideoOverlayWindow::Create(controller);
 }
 
-media::PictureInPictureEventsInfo::AutoPipReason
-ChromeContentBrowserClient::GetAutoPipReason(
+media::PictureInPictureEventsInfo::AutoPipInfo
+ChromeContentBrowserClient::GetAutoPipInfo(
     const content::WebContents& web_contents) const {
 #if BUILDFLAG(IS_ANDROID)
-  return media::PictureInPictureEventsInfo::AutoPipReason::kUnknown;
+  return media::PictureInPictureEventsInfo::AutoPipInfo();
 #else
   auto* auto_pip_tab_helper =
       AutoPictureInPictureTabHelper::FromWebContents(&web_contents);
-  return auto_pip_tab_helper
-             ? auto_pip_tab_helper->GetAutoPipTriggerReason()
-             : media::PictureInPictureEventsInfo::AutoPipReason::kUnknown;
+  return auto_pip_tab_helper ? auto_pip_tab_helper->GetAutoPipInfo()
+                             : media::PictureInPictureEventsInfo::AutoPipInfo();
 #endif  // BUILDFLAG(IS_ANDROID)
 }
 
@@ -7796,7 +7824,10 @@ bool ChromeContentBrowserClient::IsClipboardPasteAllowed(
       browser_context->GetPermissionController();
   blink::mojom::PermissionStatus status =
       permission_controller->GetPermissionStatusForCurrentDocument(
-          blink::PermissionType::CLIPBOARD_READ_WRITE, render_frame_host);
+          content::PermissionDescriptorUtil::
+              CreatePermissionDescriptorForPermissionType(
+                  blink::PermissionType::CLIPBOARD_READ_WRITE),
+          render_frame_host);
   if (status == blink::mojom::PermissionStatus::GRANTED)
     return true;
 
@@ -8759,10 +8790,12 @@ bool ChromeContentBrowserClient::ShouldSuppressAXLoadComplete(
 void ChromeContentBrowserClient::BindAIManager(
     content::BrowserContext* browser_context,
     base::SupportsUserData* context_user_data,
+    content::RenderFrameHost* rfh,
     mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
   if (!context_user_data->GetUserData(kAIManagerUserDataKey)) {
     context_user_data->SetUserData(
-        kAIManagerUserDataKey, std::make_unique<AIManager>(browser_context));
+        kAIManagerUserDataKey,
+        std::make_unique<AIManager>(browser_context, rfh));
   }
 
   AIManager* ai_manager = static_cast<AIManager*>(

@@ -16,6 +16,7 @@
 #include "chrome/browser/extensions/chrome_extension_registrar_delegate.h"
 #include "chrome/browser/extensions/load_error_reporter.h"
 #include "chrome/browser/extensions/permissions/permissions_updater.h"
+#include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/value_store/value_store_factory_impl.h"
@@ -174,11 +175,6 @@ bool DesktopAndroidExtensionSystem::AddExtension(
   return true;
 }
 
-void DesktopAndroidExtensionSystem::ReloadExtension(
-    const std::string& extension_id) {
-  registrar_->ReloadExtension(extension_id, LoadErrorBehavior::kNoisy);
-}
-
 const Extension* DesktopAndroidExtensionSystem::LoadExtensionFromDirectory(
     const base::FilePath& file_path) {
   base::ScopedAllowBlocking allow_blocking;
@@ -218,6 +214,7 @@ void DesktopAndroidExtensionSystem::InitForRegularProfile(
   registrar_ = ExtensionRegistrar::Get(browser_context_);
   registrar_->Init(
       registrar_delegate_.get(), extensions_enabled,
+      base::CommandLine::ForCurrentProcess(),
       browser_context_->GetPath().AppendASCII(kInstallDirectoryName),
       browser_context_->GetPath().AppendASCII(kUnpackedInstallDirectoryName));
   registrar_delegate_->Init(registrar_.get());
@@ -286,7 +283,8 @@ ContentVerifier* DesktopAndroidExtensionSystem::content_verifier() {
 std::unique_ptr<ExtensionSet>
 DesktopAndroidExtensionSystem::GetDependentExtensions(
     const Extension* extension) {
-  return std::make_unique<ExtensionSet>();
+  return SharedModuleService::Get(browser_context_)
+      ->GetDependentExtensions(extension);
 }
 
 void DesktopAndroidExtensionSystem::InstallUpdate(
@@ -301,12 +299,6 @@ void DesktopAndroidExtensionSystem::InstallUpdate(
 void DesktopAndroidExtensionSystem::PerformActionBasedOnOmahaAttributes(
     const std::string& extension_id,
     const base::Value::Dict& attributes) {
-  NOTREACHED();
-}
-
-bool DesktopAndroidExtensionSystem::FinishDelayedInstallationIfReady(
-    const std::string& extension_id,
-    bool install_immediately) {
   NOTREACHED();
 }
 

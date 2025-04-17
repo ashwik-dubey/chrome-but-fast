@@ -1169,7 +1169,7 @@ void URLRequestHttpJob::OnSetCookieResult(const CookieOptions& options,
 
 #if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
 void URLRequestHttpJob::ProcessDeviceBoundSessionsHeader() {
-  if (!request_->allows_device_bound_sessions() &&
+  if (!request_->allows_device_bound_session_registration() &&
       !features::kDeviceBoundSessionsForceEnableForTesting.Get()) {
     return;
   }
@@ -1603,9 +1603,7 @@ bool URLRequestHttpJob::NeedsRetryWithStorageAccess() {
   auto determine_storage_access_retry_outcome =
       [&]() -> cookie_util::ActivateStorageAccessRetryOutcome {
     using enum cookie_util::ActivateStorageAccessRetryOutcome;
-    if (!request_->network_delegate()->IsStorageAccessHeaderEnabled(
-            base::OptionalToPtr(request_->isolation_info().top_frame_origin()),
-            request_->url())) {
+    if (!request_->network_delegate()->IsStorageAccessHeaderEnabled()) {
       return kFailureHeaderDisabled;
     }
     if (!ShouldAddCookieHeader() ||

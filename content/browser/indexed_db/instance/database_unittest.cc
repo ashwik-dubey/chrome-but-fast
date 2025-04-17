@@ -33,13 +33,13 @@
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
-#include "content/browser/indexed_db/instance/backing_store.h"
 #include "content/browser/indexed_db/instance/bucket_context.h"
 #include "content/browser/indexed_db/instance/connection.h"
 #include "content/browser/indexed_db/instance/cursor.h"
 #include "content/browser/indexed_db/instance/database_callbacks.h"
 #include "content/browser/indexed_db/instance/factory_client.h"
 #include "content/browser/indexed_db/instance/fake_transaction.h"
+#include "content/browser/indexed_db/instance/leveldb/backing_store.h"
 #include "content/browser/indexed_db/instance/mock_factory_client.h"
 #include "content/browser/indexed_db/instance/transaction.h"
 #include "content/browser/indexed_db/mock_mojo_indexed_db_database_callbacks.h"
@@ -59,6 +59,8 @@ namespace content::indexed_db {
 namespace {
 constexpr int64_t kTestObjectStoreId = 1001;
 constexpr int64_t kTestIndexId = 2002;
+constexpr char kTestForceCloseMessage[] =
+    "The database's connection is force-closed.";
 
 // Contains a record's keys and value that tests use to populate the database.
 struct TestIDBRecord {
@@ -349,11 +351,11 @@ TEST_F(DatabaseTest, ConnectionLifecycle) {
   db_ = nullptr;
 
   EXPECT_TRUE(request1.connection());
-  request1.connection()->CloseAndReportForceClose();
+  request1.connection()->CloseAndReportForceClose(kTestForceCloseMessage);
   EXPECT_FALSE(request1.connection()->IsConnected());
 
   EXPECT_TRUE(request2.connection());
-  request2.connection()->CloseAndReportForceClose();
+  request2.connection()->CloseAndReportForceClose(kTestForceCloseMessage);
   EXPECT_FALSE(request2.connection()->IsConnected());
 
   RunPostedTasks();
@@ -385,7 +387,7 @@ TEST_F(DatabaseTest, ForcedClose) {
   base::RunLoop run_loop;
   EXPECT_CALL(database_callbacks, ForcedClose)
       .WillOnce(base::test::RunClosure(run_loop.QuitClosure()));
-  request.connection()->CloseAndReportForceClose();
+  request.connection()->CloseAndReportForceClose(kTestForceCloseMessage);
   run_loop.Run();
 }
 
@@ -448,7 +450,7 @@ TEST_F(DatabaseTest, PendingDelete) {
   EXPECT_EQ(db_->ActiveOpenDeleteCount(), 1UL);
   EXPECT_EQ(db_->PendingOpenDeleteCount(), 0UL);
 
-  db_->ForceCloseAndRunTasks();
+  db_->ForceCloseAndRunTasks(kTestForceCloseMessage);
   db_ = nullptr;
 
   run_loop.Run();
@@ -514,7 +516,7 @@ TEST_F(DatabaseTest, OpenDeleteClear) {
   EXPECT_CALL(database_callbacks2, ForcedClose);
   EXPECT_CALL(database_callbacks3, ForcedClose);
 
-  db_->ForceCloseAndRunTasks();
+  db_->ForceCloseAndRunTasks(kTestForceCloseMessage);
   db_ = nullptr;
   database_callbacks1.FlushForTesting();
 
@@ -546,7 +548,7 @@ TEST_F(DatabaseTest, ForceDelete) {
                               run_loop.QuitClosure());
   RunPostedTasks();
   EXPECT_FALSE(run_loop.AnyQuitCalled());
-  db_->ForceCloseAndRunTasks();
+  db_->ForceCloseAndRunTasks(kTestForceCloseMessage);
   db_ = nullptr;
   run_loop.Run();
   EXPECT_FALSE(db_);
@@ -589,7 +591,7 @@ TEST_F(DatabaseTest, ForceCloseWhileOpenPending) {
   EXPECT_EQ(db_->ActiveOpenDeleteCount(), 1UL);
   EXPECT_EQ(db_->PendingOpenDeleteCount(), 0UL);
 
-  db_->ForceCloseAndRunTasks();
+  db_->ForceCloseAndRunTasks(kTestForceCloseMessage);
   db_ = nullptr;
   RunPostedTasks();
   EXPECT_FALSE(db_);
@@ -635,7 +637,7 @@ TEST_F(DatabaseTest, ForceCloseWhileOpenAndDeletePending) {
   EXPECT_EQ(db_->ActiveOpenDeleteCount(), 1UL);
   EXPECT_EQ(db_->PendingOpenDeleteCount(), 1UL);
 
-  db_->ForceCloseAndRunTasks();
+  db_->ForceCloseAndRunTasks(kTestForceCloseMessage);
   db_ = nullptr;
   run_loop.Run();
 }
@@ -668,7 +670,9 @@ class DatabaseOperationTest : public DatabaseTest {
         transaction_id, /*scope=*/std::set<int64_t>(),
         std::make_unique<FakeTransaction>(
             commit_success_, blink::mojom::IDBTransactionMode::VersionChange,
-            bucket_context_->backing_store()->AsWeakPtr()));
+            reinterpret_cast<level_db::BackingStore*>(
+                bucket_context_->backing_store())
+                ->AsWeakPtr()));
 
     std::vector<PartitionedLockManager::PartitionedLockRequest> lock_requests =
         {{GetDatabaseLockId(db_->metadata().name),

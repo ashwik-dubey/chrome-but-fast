@@ -9,6 +9,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "services/on_device_model/ml/chrome_ml_types.h"
 #include "third_party/dawn/include/dawn/dawn_proc_table.h"
@@ -196,6 +197,11 @@ using ChromeMLSizeInTokensFn = std::function<void(int)>;
 // This will be called on the internal thread executing the model.
 using ChromeMLScoreFn = std::function<void(float)>;
 
+// Called with a vector of probability scores after a call to
+// GetProbabilitiesBlocking().
+using ChromeMLGetProbabilitiesBlockingFn =
+    std::function<void(const std::vector<float>&)>;
+
 struct ChromeMLExecuteOptions {
   int context_mode;
   uint32_t max_tokens;
@@ -251,6 +257,9 @@ struct ChromeMLMetricsFns {
                                       int min,
                                       int exclusive_max,
                                       size_t buckets);
+
+  // Logs a sample for timings up to 3 minutes.
+  void (*RecordMediumTimesHistogram)(const char* name, int64_t milliseconds);
 };
 
 // Precision used by the gpu delegate during inference.
@@ -376,6 +385,13 @@ struct ChromeMLAPI {
   void (*SessionScore)(ChromeMLSession session,
                        const std::string& text,
                        const ChromeMLScoreFn& fn);
+
+  // Get the probabilities of a batch of tokens.
+  // Note that this is a blocking call, and mainly used for testing purpose.
+  void (*SessionGetProbabilitiesBlocking)(
+      ChromeMLSession session,
+      const std::string& input,
+      const ChromeMLGetProbabilitiesBlockingFn& fn);
 
   // Create a new session in the model, optionally loading adaptation data.
   ChromeMLSession (*CreateSession)(

@@ -11,6 +11,7 @@
 #import "components/signin/public/identity_manager/identity_manager.h"
 #import "components/strings/grit/components_strings.h"
 #import "ios/chrome/browser/authentication/ui_bundled/authentication_ui_util.h"
+#import "ios/chrome/browser/authentication/ui_bundled/continuation.h"
 #import "ios/chrome/browser/authentication/ui_bundled/history_sync/history_sync_coordinator.h"
 #import "ios/chrome/browser/authentication/ui_bundled/history_sync/history_sync_popup_coordinator.h"
 #import "ios/chrome/browser/authentication/ui_bundled/history_sync/history_sync_utils.h"
@@ -43,7 +44,8 @@ using signin_metrics::PromoAction;
 @property(nonatomic, strong) AlertCoordinator* alertCoordinator;
 // Coordinator to handle additional steps after the identity is added, i.e.
 // after `addAccountSigninManager` does its job.
-@property(nonatomic, strong) SigninCoordinator* postSigninManagerCoordinator;
+@property(nonatomic, strong) SigninCoordinator<InterruptibleChromeCoordinator>*
+    postSigninManagerCoordinator;
 // Coordinator for history sync opt-in.
 @property(nonatomic, strong)
     HistorySyncPopupCoordinator* historySyncPopupCoordinator;
@@ -63,20 +65,27 @@ using signin_metrics::PromoAction;
   raw_ptr<signin::IdentityManager> _identityManager;
   raw_ptr<AuthenticationService> _authenticationService;
   raw_ptr<syncer::SyncService> _syncService;
+  ChangeProfileContinuationProvider _continuationProvider;
 }
 
 #pragma mark - Public
 
 - (instancetype)initWithBaseViewController:(UIViewController*)viewController
                                    browser:(Browser*)browser
+                              contextStyle:(SigninContextStyle)contextStyle
                                accessPoint:(AccessPoint)accessPoint
                                promoAction:(PromoAction)promoAction
-                              signinIntent:
-                                  (AddAccountSigninIntent)signinIntent {
+                              signinIntent:(AddAccountSigninIntent)signinIntent
+                      continuationProvider:
+                          (const ChangeProfileContinuationProvider&)
+                              continuationProvider {
   self = [super initWithBaseViewController:viewController
                                    browser:browser
+                              contextStyle:contextStyle
                                accessPoint:accessPoint];
   if (self) {
+    CHECK(continuationProvider);
+    _continuationProvider = continuationProvider;
     _signinIntent = signinIntent;
     _promoAction = promoAction;
   }
@@ -310,8 +319,10 @@ using signin_metrics::PromoAction;
       instantSigninCoordinatorWithBaseViewController:self.baseViewController
                                              browser:self.browser
                                             identity:identity
+                                        contextStyle:self.contextStyle
                                          accessPoint:self.accessPoint
-                                         promoAction:self.promoAction];
+                                         promoAction:self.promoAction
+                                continuationProvider:_continuationProvider];
 
   __weak AddAccountSigninCoordinator* weakSelf = self;
   self.postSigninManagerCoordinator.signinCompletion = ^(
@@ -345,6 +356,7 @@ using signin_metrics::PromoAction;
                      showUserEmail:NO
                  signOutIfDeclined:NO
                         isOptional:YES
+                      contextStyle:self.contextStyle
                        accessPoint:self.accessPoint];
     self.historySyncPopupCoordinator.delegate = self;
     [self.historySyncPopupCoordinator start];

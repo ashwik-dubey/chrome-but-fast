@@ -4,15 +4,38 @@
 
 #include "chrome/browser/contextual_cueing/contextual_cueing_service.h"
 
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
-#include "base/test/task_environment.h"
+#include "base/test/test_future.h"
 #include "chrome/browser/contextual_cueing/contextual_cueing_features.h"
+#include "chrome/browser/optimization_guide/mock_optimization_guide_keyed_service.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
+#include "chrome/browser/predictors/loading_predictor.h"
+#include "chrome/browser/predictors/loading_predictor_config.h"
+#include "chrome/common/buildflags.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/prefs/testing_pref_service.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_task_environment.h"
+#include "content/public/test/test_web_contents_factory.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
+#if BUILDFLAG(ENABLE_GLIC)
+#include "chrome/browser/glic/glic_pref_names.h"
+#endif
+
 namespace contextual_cueing {
 
+using ::testing::_;
+using ::testing::An;
+using ::testing::ElementsAre;
+using ::testing::WithArgs;
+
 namespace {
+
+using ::testing::_;
 
 constexpr char kFooURL[] = "https://foo.com";
 constexpr char kBarURL[] = "https://bar.com";
@@ -29,25 +52,43 @@ class ContextualCueingServiceTest : public testing::Test {
            {"NudgeCapTime", "24h"},
            {"NudgeCapCount", "3"},
            {"MinPageCountBetweenNudges", "0"}}}},
-        /*disabled_features=*/{});
+        {contextual_cueing::kGlicZeroStateSuggestions});
   }
 
   void SetUp() override {
     InitializeFeatureList();
+    mock_optimization_guide_keyed_service_ =
+        std::make_unique<MockOptimizationGuideKeyedService>();
+  }
+
+  void InitializeContextualCueingService() {
     service_ = std::make_unique<ContextualCueingService>(
         &page_content_extraction_service_,
-        /*optimization_guide_keyed_service=*/nullptr);
+        mock_optimization_guide_keyed_service_.get(),
+        /*loading_predictor=*/nullptr,
+        /*pref_service=*/nullptr);
   }
 
   ContextualCueingService* service() { return service_.get(); }
 
-  base::test::TaskEnvironment task_environment{
-      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+  MockOptimizationGuideKeyedService* mock_optimization_guide_keyed_service() {
+    return mock_optimization_guide_keyed_service_.get();
+  }
+
+  void FastForwardBy(base::TimeDelta time_delta) {
+    task_environment_.FastForwardBy(time_delta);
+  }
 
  protected:
   base::test::ScopedFeatureList scoped_feature_list_;
+
+ private:
+  content::BrowserTaskEnvironment task_environment_{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   page_content_annotations::PageContentExtractionService
       page_content_extraction_service_;
+  std::unique_ptr<MockOptimizationGuideKeyedService>
+      mock_optimization_guide_keyed_service_;
   std::unique_ptr<ContextualCueingService> service_;
 };
 
@@ -65,43 +106,44 @@ class ContextualCueingServiceTestCapCountAndMinPageCount
 // to show the next nudge. Does not test the backoff logic.
 TEST_F(ContextualCueingServiceTestCapCountAndMinPageCount,
        AllowsNudgeCapCountAndMinPageCountBetweenNudges) {
+  InitializeContextualCueingService();
   service()->ReportPageLoad();
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)), NudgeDecision::kSuccess);
   service()->CueingNudgeShown(GURL(kFooURL));
-  task_environment.FastForwardBy(base::Minutes(1));
+  FastForwardBy(base::Minutes(1));
 
   // 3 quiet page loads after the cue.
   for (size_t i = 0; i < 3; i++) {
     service()->ReportPageLoad();
     EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)),
               NudgeDecision::kNotEnoughPageLoadsSinceLastNudge);
-    task_environment.FastForwardBy(base::Minutes(1));
+    FastForwardBy(base::Minutes(1));
   }
 
   service()->ReportPageLoad();
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)), NudgeDecision::kSuccess);
   service()->CueingNudgeShown(GURL(kBarURL));
-  task_environment.FastForwardBy(base::Minutes(1));
+  FastForwardBy(base::Minutes(1));
 
   // 3 quiet page loads after the cue.
   for (size_t i = 0; i < 3; i++) {
     service()->ReportPageLoad();
     EXPECT_EQ(service()->CanShowNudge(GURL(kBazURL)),
               NudgeDecision::kNotEnoughPageLoadsSinceLastNudge);
-    task_environment.FastForwardBy(base::Minutes(1));
+    FastForwardBy(base::Minutes(1));
   }
 
   service()->ReportPageLoad();
   EXPECT_EQ(service()->CanShowNudge(GURL(kBazURL)), NudgeDecision::kSuccess);
   service()->CueingNudgeShown(GURL(kBazURL));
-  task_environment.FastForwardBy(base::Minutes(1));
+  FastForwardBy(base::Minutes(1));
 
   // 3 quiet page loads after the cue.
   for (size_t i = 0; i < 3; i++) {
     service()->ReportPageLoad();
     EXPECT_EQ(service()->CanShowNudge(GURL(kQuxURL)),
               NudgeDecision::kNotEnoughPageLoadsSinceLastNudge);
-    task_environment.FastForwardBy(base::Minutes(1));
+    FastForwardBy(base::Minutes(1));
   }
 
   // 3 cues allowed within 24 hours.
@@ -109,53 +151,64 @@ TEST_F(ContextualCueingServiceTestCapCountAndMinPageCount,
   EXPECT_EQ(service()->CanShowNudge(GURL(kQuxURL)),
             NudgeDecision::kTooManyNudgesShownToTheUser);
 
-  task_environment.FastForwardBy(base::Hours(25));
+  FastForwardBy(base::Hours(25));
   service()->ReportPageLoad();
   EXPECT_EQ(service()->CanShowNudge(GURL(kQuxURL)), NudgeDecision::kSuccess);
 }
 
 TEST_F(ContextualCueingServiceTest, AllowsNudge) {
+  InitializeContextualCueingService();
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)), NudgeDecision::kSuccess);
 }
 
+TEST_F(ContextualCueingServiceTest, DoesNotRegisterOptimizationType) {
+  EXPECT_CALL(*mock_optimization_guide_keyed_service(),
+              RegisterOptimizationTypes(ElementsAre(
+                  optimization_guide::proto::GLIC_ZERO_STATE_SUGGESTIONS)))
+      .Times(0);
+  InitializeContextualCueingService();
+}
+
 TEST_F(ContextualCueingServiceTest, NudgesCappedByBackoffRule) {
+  InitializeContextualCueingService();
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)), NudgeDecision::kSuccess);
 
   service()->CueingNudgeShown(GURL(kFooURL));
   service()->CueingNudgeDismissed();  // Backoff time is 24 hours.
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)),
             NudgeDecision::kNotEnoughTimeHasElapsedSinceLastNudge);
-  task_environment.FastForwardBy(base::Hours(13));
+  FastForwardBy(base::Hours(13));
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)),
             NudgeDecision::kNotEnoughTimeHasElapsedSinceLastNudge);
-  task_environment.FastForwardBy(base::Hours(12));
+  FastForwardBy(base::Hours(12));
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)), NudgeDecision::kSuccess);
 
   service()->CueingNudgeShown(GURL(kBarURL));
   service()->CueingNudgeDismissed();  // Backoff time is 48 hours.
   EXPECT_EQ(service()->CanShowNudge(GURL(kBazURL)),
             NudgeDecision::kNotEnoughTimeHasElapsedSinceLastNudge);
-  task_environment.FastForwardBy(base::Minutes(48 * 60 + 1));
+  FastForwardBy(base::Minutes(48 * 60 + 1));
   EXPECT_EQ(service()->CanShowNudge(GURL(kBazURL)), NudgeDecision::kSuccess);
 
   service()->CueingNudgeShown(GURL(kBazURL));
   service()->CueingNudgeDismissed();  // Backoff time is 96 hours.
-  task_environment.FastForwardBy(base::Minutes(96 * 60 - 1));
+  FastForwardBy(base::Minutes(96 * 60 - 1));
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)),
             NudgeDecision::kNotEnoughTimeHasElapsedSinceLastNudge);
-  task_environment.FastForwardBy(base::Minutes(2));
+  FastForwardBy(base::Minutes(2));
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)), NudgeDecision::kSuccess);
 }
 
 TEST_F(ContextualCueingServiceTest, BackoffCountResetAfterClick) {
+  InitializeContextualCueingService();
   service()->CueingNudgeShown(GURL(kFooURL));
   service()->CueingNudgeDismissed();  // Backoff time is 24 hours.
-  task_environment.FastForwardBy(base::Hours(25));
+  FastForwardBy(base::Hours(25));
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)), NudgeDecision::kSuccess);
 
   service()->CueingNudgeShown(GURL(kBarURL));
   service()->CueingNudgeDismissed();  // Backoff time is 48 hours.
-  task_environment.FastForwardBy(base::Hours(49));
+  FastForwardBy(base::Hours(49));
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)), NudgeDecision::kSuccess);
 
   service()->CueingNudgeShown(GURL(kBazURL));
@@ -163,27 +216,28 @@ TEST_F(ContextualCueingServiceTest, BackoffCountResetAfterClick) {
   service()->CueingNudgeShown(GURL(kFooURL));
   service()->CueingNudgeDismissed();  // Backoff time is 24 hours.
 
-  task_environment.FastForwardBy(base::Hours(23));
+  FastForwardBy(base::Hours(23));
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)),
             NudgeDecision::kNotEnoughTimeHasElapsedSinceLastNudge);
-  task_environment.FastForwardBy(base::Hours(2));
+  FastForwardBy(base::Hours(2));
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)), NudgeDecision::kSuccess);
 }
 
 TEST_F(ContextualCueingServiceTest, NudgesCappedByFrequency) {
+  InitializeContextualCueingService();
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)), NudgeDecision::kSuccess);
   service()->CueingNudgeShown(GURL(kFooURL));
-  task_environment.FastForwardBy(base::Hours(1));
+  FastForwardBy(base::Hours(1));
   service()->CueingNudgeShown(GURL(kBarURL));
-  task_environment.FastForwardBy(base::Hours(4));
+  FastForwardBy(base::Hours(4));
   service()->CueingNudgeShown(GURL(kBazURL));
   EXPECT_EQ(service()->CanShowNudge(GURL(kQuxURL)),
             NudgeDecision::kTooManyNudgesShownToTheUser);
 
-  task_environment.FastForwardBy(base::Hours(18));
+  FastForwardBy(base::Hours(18));
   EXPECT_EQ(service()->CanShowNudge(GURL(kQuxURL)),
             NudgeDecision::kTooManyNudgesShownToTheUser);
-  task_environment.FastForwardBy(base::Hours(2));
+  FastForwardBy(base::Hours(2));
   EXPECT_EQ(service()->CanShowNudge(GURL(kQuxURL)), NudgeDecision::kSuccess);
 
   service()->CueingNudgeShown(GURL(kFooURL));
@@ -206,23 +260,24 @@ class ContextualCueingServiceTestMinPageCountBetweenNudges
 
 TEST_F(ContextualCueingServiceTestMinPageCountBetweenNudges,
        MinPageCountBetweenNudges) {
+  InitializeContextualCueingService();
   service()->ReportPageLoad();
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)), NudgeDecision::kSuccess);
   service()->CueingNudgeShown(GURL(kFooURL));
-  task_environment.FastForwardBy(base::Minutes(1));
+  FastForwardBy(base::Minutes(1));
 
   // 3 quiet page loads after the cue.
   for (size_t i = 0; i < 3; i++) {
     service()->ReportPageLoad();
     EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)),
               NudgeDecision::kNotEnoughPageLoadsSinceLastNudge);
-    task_environment.FastForwardBy(base::Minutes(1));
+    FastForwardBy(base::Minutes(1));
   }
 
   service()->ReportPageLoad();
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)), NudgeDecision::kSuccess);
   service()->CueingNudgeShown(GURL(kBarURL));
-  task_environment.FastForwardBy(base::Minutes(1));
+  FastForwardBy(base::Minutes(1));
 }
 
 // Tests the per domain nudge limits, ie., x nudges per y hours for each domain.
@@ -243,10 +298,11 @@ class ContextualCueingServiceTestPerDomainLimits
 };
 
 TEST_F(ContextualCueingServiceTestPerDomainLimits, PerDomainLimits) {
+  InitializeContextualCueingService();
   service()->ReportPageLoad();
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)), NudgeDecision::kSuccess);
   service()->CueingNudgeShown(GURL(kFooURL));
-  task_environment.FastForwardBy(base::Minutes(1));
+  FastForwardBy(base::Minutes(1));
 
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)),
             NudgeDecision::kTooManyNudgesShownToTheUserForDomain);
@@ -255,7 +311,7 @@ TEST_F(ContextualCueingServiceTestPerDomainLimits, PerDomainLimits) {
   service()->ReportPageLoad();
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)), NudgeDecision::kSuccess);
   service()->CueingNudgeShown(GURL(kBarURL));
-  task_environment.FastForwardBy(base::Minutes(1));
+  FastForwardBy(base::Minutes(1));
 
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)),
             NudgeDecision::kTooManyNudgesShownToTheUserForDomain);
@@ -263,11 +319,157 @@ TEST_F(ContextualCueingServiceTestPerDomainLimits, PerDomainLimits) {
             NudgeDecision::kTooManyNudgesShownToTheUserForDomain);
   EXPECT_EQ(service()->CanShowNudge(GURL(kBazURL)), NudgeDecision::kSuccess);
 
-  task_environment.FastForwardBy(base::Hours(24));
+  FastForwardBy(base::Hours(24));
   EXPECT_EQ(service()->CanShowNudge(GURL(kFooURL)), NudgeDecision::kSuccess);
   EXPECT_EQ(service()->CanShowNudge(GURL(kBarURL)), NudgeDecision::kSuccess);
   EXPECT_EQ(service()->CanShowNudge(GURL(kBazURL)), NudgeDecision::kSuccess);
 }
+
+class MockLoadingPredictor : public predictors::LoadingPredictor {
+ public:
+  explicit MockLoadingPredictor(Profile* profile)
+      : LoadingPredictor(predictors::LoadingPredictorConfig(), profile) {}
+
+  MOCK_METHOD(void,
+              PreconnectURLIfAllowed,
+              (const GURL& url,
+               bool allow_credentials,
+               const net::NetworkAnonymizationKey& network_anonymization_key,
+               const net::NetworkTrafficAnnotationTag& traffic_annotation,
+               const content::StoragePartitionConfig* storage_partition_config),
+              (override));
+};
+
+#if BUILDFLAG(ENABLE_GLIC)
+class ContextualCueingServiceTestZeroStateSuggestions : public testing::Test {
+ public:
+  ContextualCueingServiceTestZeroStateSuggestions() {
+    scoped_feature_list_.InitAndEnableFeature(kGlicZeroStateSuggestions);
+  }
+
+  void SetUp() override {
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        optimization_guide::switches::
+            kOptimizationGuideServiceModelExecutionURL,
+        "https://mes.com/");
+
+    web_contents_factory_ = std::make_unique<content::TestWebContentsFactory>();
+    mock_optimization_guide_keyed_service_ = static_cast<
+        MockOptimizationGuideKeyedService*>(
+        OptimizationGuideKeyedServiceFactory::GetInstance()
+            ->SetTestingFactoryAndUse(
+                &profile_,
+                base::BindRepeating([](content::BrowserContext* context)
+                                        -> std::unique_ptr<KeyedService> {
+                  return std::make_unique<MockOptimizationGuideKeyedService>();
+                })));
+
+    loading_predictor_ =
+        std::make_unique<testing::NiceMock<MockLoadingPredictor>>(&profile_);
+
+    pref_service_ = std::make_unique<TestingPrefServiceSimple>();
+    glic::prefs::RegisterProfilePrefs(pref_service_->registry());
+  }
+
+  void TearDown() override {
+    loading_predictor_->Shutdown();
+  }
+
+  void SetGlicTabContextEnabled(bool enabled) {
+    pref_service_->SetBoolean(glic::prefs::kGlicTabContextEnabled, enabled);
+  }
+
+  void InitializeContextualCueingService() {
+    service_ = std::make_unique<ContextualCueingService>(
+        /*page_content_extraction_service=*/nullptr,
+        mock_optimization_guide_keyed_service(), loading_predictor_.get(),
+        pref_service_.get());
+  }
+
+  ContextualCueingService* service() { return service_.get(); }
+
+  MockLoadingPredictor* loading_predictor() { return loading_predictor_.get(); }
+
+  MockOptimizationGuideKeyedService* mock_optimization_guide_keyed_service() {
+    return mock_optimization_guide_keyed_service_;
+  }
+
+  content::WebContents* CreateWebContents() {
+    return web_contents_factory_->CreateWebContents(&profile_);
+  }
+
+ private:
+  content::BrowserTaskEnvironment task_environment_;
+  base::test::ScopedFeatureList scoped_feature_list_;
+  TestingProfile profile_;
+  raw_ptr<MockOptimizationGuideKeyedService>
+      mock_optimization_guide_keyed_service_;
+  std::unique_ptr<content::TestWebContentsFactory> web_contents_factory_;
+  std::unique_ptr<testing::NiceMock<MockLoadingPredictor>> loading_predictor_;
+  std::unique_ptr<TestingPrefServiceSimple> pref_service_;
+  std::unique_ptr<ContextualCueingService> service_;
+};
+
+TEST_F(ContextualCueingServiceTestZeroStateSuggestions,
+       PreconnectsWithContextEnabled) {
+  EXPECT_CALL(*loading_predictor(),
+              PreconnectURLIfAllowed(GURL("https://mes.com/"), _, _, _, _));
+  SetGlicTabContextEnabled(true);
+  InitializeContextualCueingService();
+
+  service()->PrepareToFetchContextualGlicZeroStateSuggestions(
+      CreateWebContents());
+}
+
+TEST_F(ContextualCueingServiceTestZeroStateSuggestions,
+       NoPreconnectWhenContextDisabled) {
+  EXPECT_CALL(*loading_predictor(), PreconnectURLIfAllowed).Times(0);
+  SetGlicTabContextEnabled(false);
+  InitializeContextualCueingService();
+
+  service()->PrepareToFetchContextualGlicZeroStateSuggestions(
+      CreateWebContents());
+}
+
+TEST_F(ContextualCueingServiceTestZeroStateSuggestions,
+       InitializesPageDataWithContextEnabled) {
+  base::HistogramTester histogram_tester;
+  SetGlicTabContextEnabled(true);
+  EXPECT_CALL(*mock_optimization_guide_keyed_service(),
+              RegisterOptimizationTypes(ElementsAre(
+                  optimization_guide::proto::GLIC_ZERO_STATE_SUGGESTIONS)))
+      .Times(1);
+  InitializeContextualCueingService();
+
+  base::test::TestFuture<std::optional<std::vector<std::string>>> future;
+  content::WebContents* web_contents = CreateWebContents();
+  service()->GetContextualGlicZeroStateSuggestions(
+      web_contents, /*is_fre=*/false, future.GetCallback());
+
+  ASSERT_TRUE(future.Wait());
+
+  EXPECT_GE(histogram_tester.GetTotalSum(
+                "ContextualCueing.ZeroStateSuggestions.ContextExtractionDone"),
+            0);
+}
+
+TEST_F(ContextualCueingServiceTestZeroStateSuggestions,
+       DoesNotInitializePageDataWithContextDisabled) {
+  base::HistogramTester histogram_tester;
+  SetGlicTabContextEnabled(false);
+  InitializeContextualCueingService();
+
+  base::test::TestFuture<std::optional<std::vector<std::string>>> future;
+  content::WebContents* web_contents = CreateWebContents();
+  service()->GetContextualGlicZeroStateSuggestions(
+      web_contents, /*is_fre=*/false, future.GetCallback());
+
+  ASSERT_TRUE(future.Wait());
+
+  histogram_tester.ExpectTotalCount(
+      "ContextualCueing.ZeroStateSuggestions.ContextExtractionDone", 0);
+}
+#endif
 
 }  // namespace
 

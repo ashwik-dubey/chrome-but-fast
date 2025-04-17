@@ -602,6 +602,24 @@ void MaybeRegisterChromeFeaturePromos(
       IDS_GMC_LOCAL_MEDIA_CAST_START_PROMO,
       FeaturePromoSpecification::AcceleratorInfo()));
 
+  // kIPHPasswordsSavePrimingPromo:
+  registry.RegisterFeature(std::move(
+      FeaturePromoSpecification::CreateForToastPromo(
+          feature_engagement::kIPHPasswordsSavePrimingPromoFeature,
+#if BUILDFLAG(IS_CHROMEOS)
+          // No avatar button on ChromeOS, so anchor to app menu instead.
+          kToolbarAppMenuButtonElementId,
+#else
+          kToolbarAvatarButtonElementId,
+#endif
+          IDS_PASSWORDS_SAVE_PRIMING_PROMO_BODY,
+          IDS_PASSWORDS_SAVE_PRIMING_PROMO_SCREENREADER,
+          FeaturePromoSpecification::AcceleratorInfo())
+          .SetMetadata(
+              137, "dfried@chromium.org",
+              "Triggered when the user navigates a page with an eligible login "
+              "form, and they have no saved passwords.")));
+
   // kIPHPasswordsManagementBubbleAfterSaveFeature:
   registry.RegisterFeature(std::move(
       FeaturePromoSpecification::CreateForToastPromo(
@@ -1544,7 +1562,7 @@ void MaybeRegisterChromeTutorials(
             // Bubble step - Address bar
             TutorialDescription::BubbleStep(kOmniboxElementId)
                 .SetBubbleBodyText(IDS_TUTORIAL_LENS_OVERLAY_CLICK_ADDRESS_BAR)
-                .SetBubbleArrow(HelpBubbleArrow::kTopRight),
+                .SetBubbleArrow(HelpBubbleArrow::kTopCenter),
 
             // Bubble step - Lens button
             TutorialDescription::BubbleStep(kLensOverlayPageActionIconElementId)
@@ -1660,7 +1678,19 @@ void MaybeRegisterChromeNewBadges(user_education::NewBadgeRegistry& registry) {
       user_education::Metadata(136, "agale@chromium.org",
                                "Shown in the glic settings page when the user "
                                "wants to change the keyboard shortcut.")));
+
+  registry.RegisterFeature(user_education::NewBadgeSpecification(
+      features::kGlicAppMenuNewBadge,
+      user_education::Metadata(136, "sophey@chromium.org",
+                               "Shown in the three dot menu.")));
 #endif  // BUILDFLAG(ENABLE_GLIC)
+
+  registry.RegisterFeature(user_education::NewBadgeSpecification(
+      features::kSideBySide,
+      user_education::Metadata(
+          141, "emshack@chromium.org",
+          "Shown in the tab context menu when the user enters or exits split "
+          "view.")));
 }
 
 std::unique_ptr<user_education::FeaturePromoControllerCommon>

@@ -31,26 +31,6 @@ class CONTENT_EXPORT BrowserAccessibilityState {
   // Returns the singleton instance.
   static BrowserAccessibilityState* GetInstance();
 
-  // Enables accessibility for all running tabs.
-  // Called when an accessibility client is detected.
-  // It is often preferable to use ScopedAccessibilityMode.
-  // The process AXMode is the default used for new WebContents and pages.
-  // When no mode argument is passed, ui::kAXModeComplete is assumed.
-  virtual void EnableProcessAccessibility() = 0;
-
-  // Disables accessibility for all running tabs. (Only if accessibility is not
-  // required by a command line flag or by a platform requirement.)
-  // Called when all AXModes should be turned off.
-  // By default, new WebContents and pages will not have accessibility on.
-  virtual void DisableProcessAccessibility() = 0;
-
-  // Returns true if accessibility is not disallowed via
-  // --disable-renderer-accessibility on the process's command line.
-  // Note: the command line flag --disable-renderer-accessibility is a misnomer
-  // because it also disables accessibility in non-renderer contexts, such as
-  // UI.
-  virtual bool IsAccessibilityAllowed() = 0;
-
   // Returns the effective accessibility mode for the process. Individual
   // WebContentses may have an effective mode that is a superset of this as a
   // result of any live ScopedAccessibilityMode instances targeting them

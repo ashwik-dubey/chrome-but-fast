@@ -116,6 +116,7 @@
 #include "content/public/browser/login_delegate.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/permission_result.h"
 #include "content/public/browser/private_aggregation_data_model.h"
 #include "content/public/browser/private_network_device_delegate.h"
@@ -308,8 +309,7 @@ void OnQuotaManagedBucketDeleted(const storage::BucketLocator& bucket,
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK_GT(*deletion_task_count, 0u);
   if (status != blink::mojom::QuotaStatusCode::kOk) {
-    DLOG(ERROR) << "Couldn't remove data type " << static_cast<int>(bucket.type)
-                << " for bucket with storage key "
+    DLOG(ERROR) << "Couldn't remove data for bucket with storage key "
                 << bucket.storage_key.GetDebugString() << " is_default "
                 << bucket.is_default << " and bucket id " << bucket.id
                 << ". Status: " << static_cast<int>(status);
@@ -1962,20 +1962,16 @@ StoragePartitionImpl::GetCookieDeprecationLabelManager() {
 
 void StoragePartitionImpl::DeleteStaleSessionData() {
   GetDOMStorageContext()->StartScavengingUnusedSessionStorage();
-
-  if (base::FeatureList::IsEnabled(
-          features::kDeleteStaleSessionCookiesOnStartup)) {
-    // We need to delay deleting stale session cookies until after the cookie db
-    // has initialized, otherwise we will bypass lazy loading and block.
-    // See crbug.com/40285083 for more info.
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    GetUIThreadTaskRunner({})->PostDelayedTask(
-        FROM_HERE,
-        base::BindOnce(
-            &StoragePartitionImpl::DeleteStaleSessionOnlyCookiesAfterDelay,
-            weak_factory_.GetWeakPtr()),
-        delete_stale_session_only_cookies_delay_);
-  }
+  // We need to delay deleting stale session cookies until after the cookie db
+  // has initialized, otherwise we will bypass lazy loading and block.
+  // See crbug.com/40285083 for more info.
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  GetUIThreadTaskRunner({})->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(
+          &StoragePartitionImpl::DeleteStaleSessionOnlyCookiesAfterDelay,
+          weak_factory_.GetWeakPtr()),
+      delete_stale_session_only_cookies_delay_);
 }
 
 void StoragePartitionImpl::DeleteStaleSessionOnlyCookiesAfterDelay() {
@@ -2247,7 +2243,10 @@ void StoragePartitionImpl::OnLocalNetworkAccessPermissionRequired(
   DCHECK(permission_controller);
 
   auto status = permission_controller->GetPermissionStatusForCurrentDocument(
-      blink::PermissionType::LOCAL_NETWORK_ACCESS, rfh);
+      content::PermissionDescriptorUtil::
+          CreatePermissionDescriptorForPermissionType(
+              blink::PermissionType::LOCAL_NETWORK_ACCESS),
+      rfh);
   if (status == blink::mojom::PermissionStatus::GRANTED) {
     std::move(callback).Run(true);
     return;
@@ -2261,7 +2260,9 @@ void StoragePartitionImpl::OnLocalNetworkAccessPermissionRequired(
     permission_controller->RequestPermissionFromCurrentDocument(
         rfh,
         PermissionRequestDescription(
-            blink::PermissionType::LOCAL_NETWORK_ACCESS),
+            content::PermissionDescriptorUtil::
+                CreatePermissionDescriptorForPermissionType(
+                    blink::PermissionType::LOCAL_NETWORK_ACCESS)),
         base::BindOnce(
             [](OnLocalNetworkAccessPermissionRequiredCallback cb,
                PermissionStatus status) {
@@ -2558,7 +2559,10 @@ void StoragePartitionImpl::OnCanSendReportingReports(
   for (auto& origin : origins) {
     bool allowed = permission_controller
                        ->GetPermissionResultForOriginWithoutContext(
-                           blink::PermissionType::BACKGROUND_SYNC, origin)
+                           content::PermissionDescriptorUtil::
+                               CreatePermissionDescriptorForPermissionType(
+                                   blink::PermissionType::BACKGROUND_SYNC),
+                           origin)
                        .status == blink::mojom::PermissionStatus::GRANTED;
     if (allowed) {
       origins_out.push_back(origin);
@@ -2577,7 +2581,10 @@ void StoragePartitionImpl::OnCanSendDomainReliabilityUpload(
   std::move(callback).Run(
       permission_controller
           ->GetPermissionResultForOriginWithoutContext(
-              blink::PermissionType::BACKGROUND_SYNC, origin)
+              content::PermissionDescriptorUtil::
+                  CreatePermissionDescriptorForPermissionType(
+                      blink::PermissionType::BACKGROUND_SYNC),
+              origin)
           .status == blink::mojom::PermissionStatus::GRANTED);
 }
 
@@ -2949,8 +2956,12 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
                 CreateTaskCompletionClosure(TracingDataType::kCookies))));
   }
 
-  // It is not expected to only delete internal interest group data.
+  // It is not expected to only delete internal interest group data, or to
+  // request interest group removal to be extra-thorough w/o asking for
+  // interest group removal.
   DCHECK(!(remove_mask_ & REMOVE_DATA_MASK_INTEREST_GROUPS_INTERNAL) ||
+         remove_mask_ & REMOVE_DATA_MASK_INTEREST_GROUPS);
+  DCHECK(!(remove_mask_ & REMOVE_DATA_MASK_INTEREST_GROUPS_USER_CLEAR) ||
          remove_mask_ & REMOVE_DATA_MASK_INTEREST_GROUPS);
   if (remove_mask_ & REMOVE_DATA_MASK_INTEREST_GROUPS) {
     if (interest_group_manager) {
@@ -2965,6 +2976,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
       } else {
         interest_group_manager->DeleteInterestGroupData(
             generic_filter,
+            remove_mask_ & REMOVE_DATA_MASK_INTEREST_GROUPS_USER_CLEAR,
             mojo::WrapCallbackWithDefaultInvokeIfNotRun(
                 CreateTaskCompletionClosure(TracingDataType::kInterestGroups)));
       }

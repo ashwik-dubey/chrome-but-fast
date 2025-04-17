@@ -168,6 +168,8 @@ void DataTypeController::LoadModels(
   request.error_handler = base::BindRepeating(
       &DataTypeController::ReportModelError, weak_ptr_factory_.GetWeakPtr());
   request.authenticated_account_id = configure_context.authenticated_account_id;
+  request.previously_syncing_gaia_id_info =
+      configure_context.previously_syncing_gaia_id_info;
   request.cache_guid = configure_context.cache_guid;
   request.sync_mode = configure_context.sync_mode;
   request.configuration_start_time = configure_context.configuration_start_time;
@@ -277,7 +279,7 @@ void DataTypeController::HasUnsyncedData(
   }
   CHECK(it->second);
   // This should only be triggered for transport-only mode.
-  CHECK(!delegate_ || delegate_ == it->second.get());
+  CHECK(!delegate_ || delegate_ == it->second.get(), base::NotFatalUntil::M138);
   it->second->HasUnsyncedData(std::move(callback));
 }
 

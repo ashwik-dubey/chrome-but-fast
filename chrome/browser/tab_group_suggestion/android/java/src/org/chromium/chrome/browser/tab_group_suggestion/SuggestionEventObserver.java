@@ -24,6 +24,7 @@ import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabObserver;
+import org.chromium.components.embedder_support.util.UrlConstants;
 import org.chromium.components.visited_url_ranking.url_grouping.GroupSuggestionsService;
 import org.chromium.url.GURL;
 
@@ -41,7 +42,8 @@ public class SuggestionEventObserver {
                 public void didSelectTab(Tab tab, int type, int lastId) {
                     if (type == TabSelectionType.FROM_CLOSE
                             || type == TabSelectionType.FROM_EXIT
-                            || type == TabSelectionType.FROM_UNDO) {
+                            || type == TabSelectionType.FROM_UNDO
+                            || tab.getUrl().getSpec().equals(UrlConstants.NTP_URL)) {
                         return;
                     }
                     mGroupSuggestionsService.didSelectTab(tab.getId(), type, lastId);
@@ -76,6 +78,9 @@ public class SuggestionEventObserver {
 
     private @Nullable ObservableSupplier<Boolean> mHubVisibilitySupplier;
     private @Nullable ObservableSupplier<Pane> mFocusedPaneSupplier;
+    // The event observer will not populate any signal when in observation mode. Currently it's only
+    // blocking the very first navigation after startup.
+    private boolean mSeenFirstPageLoad = true;
 
     /** Creates the observer. */
     public SuggestionEventObserver(
@@ -86,7 +91,8 @@ public class SuggestionEventObserver {
                 new TabModelSelectorTabObserver(tabModelSelector) {
                     @Override
                     public void onPageLoadFinished(Tab tab, GURL url) {
-                        if (tab.isIncognitoBranded()) {
+                        if (tab.isIncognitoBranded() || mSeenFirstPageLoad) {
+                            mSeenFirstPageLoad = false;
                             return;
                         }
                         mGroupSuggestionsService.onPageLoadFinished(tab.getId());

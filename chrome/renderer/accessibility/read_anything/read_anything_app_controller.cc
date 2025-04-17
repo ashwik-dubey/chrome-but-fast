@@ -955,6 +955,7 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
       .SetMethod("isLeafNode", &ReadAnythingAppController::IsLeafNode)
       .SetMethod("onConnected", &ReadAnythingAppController::OnConnected)
       .SetMethod("onCopy", &ReadAnythingAppController::OnCopy)
+      .SetMethod("onNoTextContent", &ReadAnythingAppController::OnNoTextContent)
       .SetMethod("onFontSizeChanged",
                  &ReadAnythingAppController::OnFontSizeChanged)
       .SetMethod("onFontSizeReset", &ReadAnythingAppController::OnFontSizeReset)
@@ -1275,7 +1276,7 @@ std::u16string ReadAnythingAppController::GetTextContent(
     return std::u16string();
   }
 
-  return a11y::GetTextContent(ax_node, IsGoogleDocs());
+  return a11y::GetTextContent(ax_node, IsGoogleDocs(), model_.is_pdf());
 }
 
 std::string ReadAnythingAppController::GetTextDirection(
@@ -1589,6 +1590,10 @@ void ReadAnythingAppController::OnConnected() {
 
 void ReadAnythingAppController::OnCopy() const {
   page_handler_->OnCopy();
+}
+
+void ReadAnythingAppController::OnNoTextContent() {
+  Distill(/*for_training_data=*/false);
 }
 
 void ReadAnythingAppController::OnFontSizeChanged(bool increase) {

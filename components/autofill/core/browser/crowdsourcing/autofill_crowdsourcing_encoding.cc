@@ -386,12 +386,6 @@ void EncodeFormFieldsForUpload(
       added_field->add_autofill_type(field_type);
     }
 
-    if (field->generation_type()) {
-      added_field->set_generation_type(field->generation_type());
-      added_field->set_generated_password_changed(
-          field->generated_password_changed());
-    }
-
     if (field->vote_type()) {
       added_field->set_vote_type(field->vote_type());
     }
@@ -429,6 +423,12 @@ void EncodeFormFieldsForUpload(
     }
 
     if (field_options) {
+      if (field_options->generation_type) {
+        added_field->set_generation_type(field_options->generation_type);
+        added_field->set_generated_password_changed(
+            field_options->generated_password_changed);
+      }
+
       if (field_options->single_username_vote_type) {
         added_field->set_single_username_vote_type(
             field_options->single_username_vote_type.value());
@@ -809,7 +809,8 @@ std::vector<AutofillUploadContents> EncodeUploadRequest(
 
 std::pair<AutofillPageQueryRequest, std::vector<FormSignature>>
 EncodeAutofillPageQueryRequest(
-    const std::vector<raw_ptr<FormStructure, VectorExperimental>>& forms) {
+    const std::vector<raw_ptr<const FormStructure, VectorExperimental>>&
+        forms) {
   AutofillPageQueryRequest query;
   std::vector<FormSignature> queried_form_signatures;
   queried_form_signatures.reserve(forms.size());
@@ -905,10 +906,6 @@ void ProcessServerPredictionsQueryResponse(
       }
       field->set_server_predictions({field_suggestion->predictions().begin(),
                                      field_suggestion->predictions().end()});
-      if (field_suggestion->has_may_use_prefilled_placeholder()) {
-        field->set_may_use_prefilled_placeholder(
-            field_suggestion->may_use_prefilled_placeholder());
-      }
       if (heuristic_type != field->Type().GetStorableType()) {
         query_response_overrode_heuristics = true;
       }
@@ -953,32 +950,6 @@ void ProcessServerPredictionsQueryResponse(
     AutofillMetrics::LogServerResponseHasDataForForm(std::ranges::any_of(
         form->fields(), [](FieldType t) { return t != NO_SERVER_DATA; },
         &AutofillField::server_type));
-
-    form->RationalizeFormStructure(log_manager);
-
-    AssignSections(form->fields());
-
-    // Since this step requires the sections to be available, it is done after
-    // the sectioning logic is ran. Note that since this step doesn't change the
-    // types of the individual field, this should not break any assumption that
-    // was made to compute the sections.
-    form->RationalizePhoneNumberFieldsForFilling();
-
-    // Log the field type predicted by rationalization.
-    // The sections are mapped to consecutive natural numbers starting at 1.
-    std::map<Section, size_t> section_id_map;
-    for (const auto& field : form->fields()) {
-      if (!base::Contains(section_id_map, field->section())) {
-        size_t next_section_id = section_id_map.size() + 1;
-        section_id_map[field->section()] = next_section_id;
-      }
-      field->AppendLogEventIfNotRepeated(RationalizationFieldLogEvent{
-          .field_type = field->Type().GetStorableType(),
-          .section_id = section_id_map[field->section()],
-          .type_changed = field->Type().GetStorableType() !=
-                          field->ComputedType().GetStorableType(),
-      });
-    }
   }
 
   AutofillMetrics::ServerQueryMetric metric;

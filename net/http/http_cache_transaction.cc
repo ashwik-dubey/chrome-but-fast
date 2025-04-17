@@ -4,7 +4,6 @@
 
 #include "net/http/http_cache_transaction.h"
 
-#include "base/time/time.h"
 #include "build/build_config.h"  // For IS_POSIX
 
 #if BUILDFLAG(IS_POSIX)
@@ -38,7 +37,9 @@
 #include "base/strings/string_util.h"  // For EqualsCaseInsensitiveASCII.
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/clock.h"
+#include "base/time/time.h"
 #include "base/trace_event/common/trace_event_common.h"
+#include "base/trace_event/trace_id_helper.h"
 #include "base/values.h"
 #include "net/base/auth.h"
 #include "net/base/features.h"
@@ -76,13 +77,6 @@ using CacheEntryStatus = HttpResponseInfo::CacheEntryStatus;
 namespace {
 
 constexpr base::TimeDelta kStaleRevalidateTimeout = base::Seconds(60);
-
-uint64_t GetNextTraceId(HttpCache* cache) {
-  static uint32_t sNextTraceId = 0;
-
-  DCHECK(cache);
-  return (reinterpret_cast<uint64_t>(cache) << 32) | sNextTraceId++;
-}
 
 // From http://tools.ietf.org/html/draft-ietf-httpbis-p6-cache-21#section-6
 //      a "non-error response" is one with a 2xx (Successful) or 3xx
@@ -183,7 +177,7 @@ bool MethodUsesNoVarySearch(const std::string& method) {
 //-----------------------------------------------------------------------------
 
 HttpCache::Transaction::Transaction(RequestPriority priority, HttpCache* cache)
-    : track_for_state_change_(GetNextTraceId(cache)),
+    : track_for_state_change_(base::trace_event::GetNextGlobalTraceId()),
       priority_(priority),
       cache_(cache->GetWeakPtr()),
       read_no_vary_search_cache_(cache->no_vary_search_cache_) {
@@ -1458,6 +1452,7 @@ int HttpCache::Transaction::DoCreateEntryComplete(int result) {
         if (partial_) {
           partial_->RestoreHeaders(&mutable_request_->extra_headers);
         }
+        CHECK(!IsUsingURLFromNoVarySearchCache());
         TransitionToState(STATE_SEND_REQUEST);
         return OK;
       }
@@ -1592,6 +1587,16 @@ int HttpCache::Transaction::DoAddToEntryComplete(int result) {
     if (mode_ == READ) {
       TransitionToState(STATE_FINISH_HEADERS);
       return ERR_CACHE_MISS;
+    }
+
+    if (IsUsingURLFromNoVarySearchCache()) {
+      // The entry is probably fine, we just couldn't get a lock on it this
+      // time. The restarted request is permitted to attempt to get a cache lock
+      // for the original URL, and on successful completion may later replace
+      // the entry in the NoVarySearchCache.
+      return RestartWithoutNoVarySearchCache(
+          RestartCacheEntryAction::kDontErase,
+          NoVarySearchUseResult::kCacheLockTimeout);
     }
 
     // The cache is busy, bypass it for this transaction.
@@ -3290,6 +3295,7 @@ bool HttpCache::Transaction::ValidatePartialResponse() {
     DCHECK(!reading_);
     if (partial_response || response_code == HTTP_OK) {
       DoomPartialEntry(true);
+      CHECK(!IsUsingURLFromNoVarySearchCache());
       mode_ = NONE;
     } else {
       if (response_code == HTTP_NOT_MODIFIED) {
@@ -3736,6 +3742,8 @@ int HttpCache::Transaction::DoRestartPartialRequest() {
   // WRITE + Doom + STATE_INIT_ENTRY == STATE_CREATE_ENTRY (without an attempt
   // to Doom the entry again).
   ResetPartialState(!range_requested_);
+
+  CHECK(!IsUsingURLFromNoVarySearchCache());
 
   // Change mode to WRITE after ResetPartialState as that may have changed the
   // mode to NONE.
@@ -4295,6 +4303,8 @@ std::string_view HttpCache::Transaction::NoVarySearchUseResultToString(
       return "Validated";
     case kUpdated:
       return "Updated";
+    case kCacheLockTimeout:
+      return "CacheLockTimeout";
   }
 }
 

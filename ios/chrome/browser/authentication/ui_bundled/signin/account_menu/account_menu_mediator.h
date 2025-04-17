@@ -39,14 +39,11 @@ class SyncService;
                         authService:(AuthenticationService*)authService
                     identityManager:(signin::IdentityManager*)identityManager
                               prefs:(PrefService*)prefs
-    NS_DESIGNATED_INITIALIZER;
+                            fromWeb:(BOOL)fromWeb NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 
 // Disconnects the mediator.
 - (void)disconnect;
-
-// Informs the mediator the authentication flow finished the sign-in.
-- (void)signinDidEndWithResult:(SigninCoordinatorResult)result;
 
 @end
 

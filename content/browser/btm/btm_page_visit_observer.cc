@@ -26,9 +26,6 @@ BtmNavigationInfo::BtmNavigationInfo(NavigationHandle& navigation_handle)
                    navigation_handle.GetNextPageUkmSourceId()}) {
   CHECK(navigation_handle.HasCommitted());
 }
-BtmNavigationInfo::BtmNavigationInfo(const BtmNavigationInfo&) = default;
-BtmNavigationInfo& BtmNavigationInfo::operator=(const BtmNavigationInfo&) =
-    default;
 BtmNavigationInfo::BtmNavigationInfo(BtmNavigationInfo&&) = default;
 BtmNavigationInfo& BtmNavigationInfo::operator=(BtmNavigationInfo&&) = default;
 BtmNavigationInfo::~BtmNavigationInfo() = default;
@@ -98,7 +95,20 @@ class NavigationState
     urls.push_back(navigation_handle.GetURL());
 
     // TODO - crbug.com/406841434: `CHECK` the result of `filter_.Filter`.
-    filter_.Filter(urls, accesses);
+    bool were_all_accesses_matched = filter_.Filter(urls, accesses);
+    if (!were_all_accesses_matched) {
+      std::string redirects_debug_string;
+      for (const GURL& url : urls) {
+        redirects_debug_string += url.spec();
+        redirects_debug_string += ", ";
+      }
+      DEBUG_ALIAS_FOR_CSTR(redirects_debug_alias,
+                           redirects_debug_string.c_str(), 256);
+      DEBUG_ALIAS_FOR_CSTR(accesses_debug_alias,
+                           filter_.ToDebugString().c_str(), 256);
+
+      base::debug::DumpWithoutCrashing();
+    }
 
     int i = 0;
     for (const size_t redirect_chain_index : server_redirect_chain_indices_) {
@@ -203,9 +213,9 @@ void BtmPageVisitObserver::DidFinishNavigation(
 
 void BtmPageVisitObserver::ReportVisit() {
   CHECK(!pending_visits_.empty());
-  VisitTuple& visit = pending_visits_.front();
-  callback_.Run(visit.prev_page, visit.navigation);
+  VisitTuple visit = std::move(pending_visits_.front());
   pending_visits_.pop_front();
+  callback_.Run(std::move(visit.prev_page), std::move(visit.navigation));
 }
 
 void BtmPageVisitObserver::NotifyStorageAccessed(
@@ -294,6 +304,15 @@ void BtmPageVisitObserver::OnCookiesAccessed(
 
     // Attribute subframe storage accesses to the top-level page.
     current_page_.had_active_storage_access = true;
+    return;
+  }
+
+  // Ignore non-navigational cookie accesses reported through this event because
+  // we can't reliably attribute subresources accesses to the URL that is
+  // loading the subresource.
+  // TODO - https://crbug.com/408168195: Attribute non-navigation accesses e.g.
+  // from Early Hints, to the correct URL.
+  if (details.source == CookieAccessDetails::Source::kNonNavigation) {
     return;
   }
 

@@ -47,6 +47,11 @@ class DISPLAY_EXPORT ScreenWinHeadless : public ScreenWin {
   Display GetDisplayNearestPoint(const gfx::Point& point) const override;
   Display GetDisplayMatching(const gfx::Rect& match_rect) const override;
   Display GetPrimaryDisplay() const override;
+  gfx::Rect ScreenToDIPRectInWindow(
+      gfx::NativeWindow window,
+      const gfx::Rect& screen_rect) const override;
+  gfx::Rect DIPToScreenRectInWindow(gfx::NativeWindow window,
+                                    const gfx::Rect& dip_rect) const override;
   bool IsHeadless() const override;
 
   // ScreenWin:
@@ -76,12 +81,14 @@ class DISPLAY_EXPORT ScreenWinHeadless : public ScreenWin {
 
  protected:
   // These are exposed for \\ui\views.
-  virtual std::vector<gfx::NativeWindow> GetNativeWindowsAtScreenPoint(
-      const gfx::Point& point) const;
+  virtual gfx::NativeWindow GetNativeWindowAtScreenPoint(
+      const gfx::Point& point,
+      const std::set<gfx::NativeWindow>& ignore) const;
   virtual gfx::Rect GetNativeWindowBoundsInScreen(
       gfx::NativeWindow window) const;
   virtual gfx::Rect GetHeadlessWindowBounds(
       gfx::AcceleratedWidget window) const;
+  virtual gfx::NativeWindow GetRootWindow(gfx::NativeWindow window) const;
 
  private:
   std::vector<internal::DisplayInfo> DisplayInfosFromScreenInfo(
@@ -98,6 +105,9 @@ class DISPLAY_EXPORT ScreenWinHeadless : public ScreenWin {
 
   gfx::Point cursor_screen_point_;
 };
+
+// Returns a ScreenWinHeadless instance. CHECK crashes if it is not active.
+DISPLAY_EXPORT ScreenWinHeadless* GetScreenWinHeadless();
 
 namespace internal {
 // Exposed for internal::DisplayInfo::ctor check only!

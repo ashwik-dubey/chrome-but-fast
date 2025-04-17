@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "enterprise_search_aggregator_provider.h"
+#include "components/omnibox/browser/enterprise_search_aggregator_provider.h"
 
 #include <memory>
 #include <string>
@@ -14,6 +14,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
@@ -107,6 +108,7 @@ const std::string kGoodJsonResponse = base::StringPrintf(
                 }
               }
             },
+            "score": 0.8,
             "dataStore": "project 1"
           }
         ],
@@ -128,6 +130,7 @@ const std::string kGoodJsonResponse = base::StringPrintf(
             },
             "destinationUri": "https://www.example.com",
             "iconUri": "https://example.com/icon.png",
+            "score": 0.4,
             "dataStore": "project2"
           }
         ]
@@ -244,7 +247,7 @@ const std::string kGoodJsonResponseImageUrls = base::StringPrintf(
                 }
               ],
               "displayPhoto": {
-                "url": "https://lh3.googleusercontent.com/some/path"
+                "url": "https://lh3.googleusercontent.com/some/path-s100"
               }
             }
           },
@@ -426,7 +429,10 @@ class EnterpriseSearchAggregatorProviderTest : public testing::Test {
         .WillRepeatedly(Return(true));
   }
 
-  void InitFeature() { scoped_config_.Get().enabled = true; }
+  void InitFeature() {
+    scoped_config_.Get().enabled = true;
+    scoped_config_.Get().use_server_relevance_scores = false;
+  }
 
   void InitTemplateUrlService() {
     TemplateURLData data;
@@ -434,6 +440,7 @@ class EnterpriseSearchAggregatorProviderTest : public testing::Test {
     data.SetKeyword(u"keyword");
     data.SetURL("https://www.google.com/?q={searchTerms}");
     data.suggestions_url = "https://www.google.com/complete/?q={searchTerms}";
+    data.favicon_url = GURL("https://www.google.com/favicon.ico");
     data.is_active = TemplateURLData::ActiveStatus::kTrue;
     data.featured_by_policy = true;
     data.policy_origin = TemplateURLData::PolicyOrigin::kSearchAggregator;
@@ -484,10 +491,26 @@ class EnterpriseSearchAggregatorProviderTest : public testing::Test {
 
 TEST_F(EnterpriseSearchAggregatorProviderTest, CreateMatch) {
   provider_->adjusted_input_ = CreateInput(u"input", true);
-  auto primary_text_class = std::vector<ACMatchClassification>{
-      {0, ACMatchClassification::MATCH}, {5, ACMatchClassification::NONE}};
-  auto secondary_text_class =
-      std::vector<ACMatchClassification>{{0, ACMatchClassification::DIM}};
+  auto primary_text_class = [&](auto suggestion_type) {
+    return suggestion_type ==
+                   AutocompleteMatch::EnterpriseSearchAggregatorType::PEOPLE
+               ? std::vector<
+                     ACMatchClassification>{{0, ACMatchClassification::NONE}}
+               : std::vector<ACMatchClassification>{
+                     {0, ACMatchClassification::MATCH},
+                     {5, ACMatchClassification::NONE}};
+  };
+  auto secondary_text_class = [&](auto suggestion_type) {
+    return suggestion_type ==
+                   AutocompleteMatch::EnterpriseSearchAggregatorType::PEOPLE
+               ? std::vector<
+                     ACMatchClassification>{{0,
+                                             ACMatchClassification::URL |
+                                                 ACMatchClassification::MATCH},
+                                            {5, ACMatchClassification::URL}}
+               : std::vector<ACMatchClassification>{
+                     {0, ACMatchClassification::DIM}};
+  };
 
   auto query_match = provider_->CreateMatch(
       AutocompleteMatch::EnterpriseSearchAggregatorType::QUERY, false, {1000},
@@ -500,9 +523,13 @@ TEST_F(EnterpriseSearchAggregatorProviderTest, CreateMatch) {
   EXPECT_EQ(query_match.enterprise_search_aggregator_type,
             AutocompleteMatch::EnterpriseSearchAggregatorType::QUERY);
   EXPECT_EQ(query_match.description, u"additional text");
-  EXPECT_EQ(query_match.description_class, secondary_text_class);
+  EXPECT_EQ(query_match.description_class,
+            secondary_text_class(
+                AutocompleteMatch::EnterpriseSearchAggregatorType::QUERY));
   EXPECT_EQ(query_match.contents, u"input title");
-  EXPECT_EQ(query_match.contents_class, primary_text_class);
+  EXPECT_EQ(query_match.contents_class,
+            primary_text_class(
+                AutocompleteMatch::EnterpriseSearchAggregatorType::QUERY));
   EXPECT_EQ(query_match.image_url.spec(), "https://example.com/image.png");
   EXPECT_EQ(query_match.icon_url.spec(), "https://example.com/icon.png");
   EXPECT_EQ(query_match.keyword, u"keyword");
@@ -514,17 +541,21 @@ TEST_F(EnterpriseSearchAggregatorProviderTest, CreateMatch) {
   auto people_match = provider_->CreateMatch(
       AutocompleteMatch::EnterpriseSearchAggregatorType::PEOPLE, true, {1000},
       "https://url.com/", "https://example.com/image.png",
-      "https://example.com/icon.png", u"input name", u"additional text",
-      u"keyword https://url.com/");
+      "https://example.com/icon.png", u"duckduckgo.com/?q=name",
+      u"input name - Search Engine ", u"keyword https://url.com/");
   EXPECT_EQ(people_match.relevance, 1000);
   EXPECT_EQ(people_match.destination_url.spec(), "https://url.com/");
   EXPECT_EQ(people_match.fill_into_edit, u"keyword https://url.com/");
   EXPECT_EQ(people_match.enterprise_search_aggregator_type,
             AutocompleteMatch::EnterpriseSearchAggregatorType::PEOPLE);
-  EXPECT_EQ(people_match.description, u"input name");
-  EXPECT_EQ(people_match.description_class, primary_text_class);
-  EXPECT_EQ(people_match.contents, u"additional text");
-  EXPECT_EQ(people_match.contents_class, secondary_text_class);
+  EXPECT_EQ(people_match.description, u"duckduckgo.com/?q=name");
+  EXPECT_EQ(people_match.description_class,
+            primary_text_class(
+                AutocompleteMatch::EnterpriseSearchAggregatorType::PEOPLE));
+  EXPECT_EQ(people_match.contents, u"input name - Search Engine ");
+  EXPECT_EQ(people_match.contents_class,
+            secondary_text_class(
+                AutocompleteMatch::EnterpriseSearchAggregatorType::PEOPLE));
   EXPECT_EQ(people_match.image_url.spec(), "https://example.com/image.png");
   EXPECT_EQ(people_match.icon_url.spec(), "https://example.com/icon.png");
   EXPECT_EQ(people_match.keyword, u"keyword");
@@ -680,6 +711,8 @@ TEST_F(EnterpriseSearchAggregatorProviderTest,
 
 // Test response is parsed accurately.
 TEST_F(EnterpriseSearchAggregatorProviderTest, Parse) {
+  scoped_config_.Get().use_server_relevance_scores = true;
+
   provider_->adjusted_input_ = CreateInput(u"john d", true);
   ParseResponse(kGoodJsonResponse);
 
@@ -687,33 +720,37 @@ TEST_F(EnterpriseSearchAggregatorProviderTest, Parse) {
   ASSERT_EQ(matches.size(), 3u);
 
   EXPECT_EQ(matches[0].type, AutocompleteMatchType::NAVSUGGEST);
-  EXPECT_EQ(matches[0].relevance, 610);
-  EXPECT_EQ(matches[0].contents, u"john@example.com");
+  EXPECT_EQ(matches[0].relevance, 810);
+  EXPECT_EQ(matches[0].contents, u"www.google.com/?q=john%40example.com");
   EXPECT_EQ(matches[0].description, u"John Doe");
   EXPECT_EQ(matches[0].destination_url,
             GURL("https://www.google.com/?q=john%40example.com"));
   EXPECT_EQ(matches[0].image_url, GURL("https://example.com/image.png"));
+  EXPECT_EQ(matches[0].icon_url, GURL("https://www.google.com/favicon.ico"));
   EXPECT_TRUE(PageTransitionCoreTypeIs(matches[0].transition,
                                        ui::PAGE_TRANSITION_KEYWORD));
   EXPECT_EQ(matches[0].fill_into_edit,
             u"keyword https://www.google.com/?q=john%40example.com");
 
   EXPECT_EQ(matches[1].type, AutocompleteMatchType::NAVSUGGEST);
-  EXPECT_EQ(matches[1].relevance, 520);
+  EXPECT_EQ(matches[1].relevance, 410);
   EXPECT_EQ(matches[1].contents, u"10/15/07 - John Doe - Google Docs");
   EXPECT_EQ(matches[1].description, u"John's doodle");
   EXPECT_EQ(matches[1].destination_url, GURL("https://www.example.com"));
+  EXPECT_EQ(matches[1].image_url, GURL());
   EXPECT_EQ(matches[1].icon_url, GURL("https://example.com/icon.png"));
   EXPECT_TRUE(PageTransitionCoreTypeIs(matches[1].transition,
                                        ui::PAGE_TRANSITION_KEYWORD));
   EXPECT_EQ(matches[1].fill_into_edit, u"keyword https://www.example.com");
 
   EXPECT_EQ(matches[2].type, AutocompleteMatchType::SEARCH_SUGGEST);
-  EXPECT_EQ(matches[2].relevance, 510);
+  EXPECT_EQ(matches[2].relevance, 0);
   EXPECT_EQ(matches[2].contents, u"John's Document 1");
   EXPECT_EQ(matches[2].description, u"");
   EXPECT_EQ(matches[2].destination_url,
             GURL("https://www.google.com/?q=John%27s+Document+1"));
+  EXPECT_EQ(matches[2].image_url, GURL());
+  EXPECT_EQ(matches[2].icon_url, GURL());
   EXPECT_TRUE(PageTransitionCoreTypeIs(matches[2].transition,
                                        ui::PAGE_TRANSITION_KEYWORD));
   EXPECT_EQ(matches[2].fill_into_edit, u"keyword John's Document 1");
@@ -727,22 +764,22 @@ TEST_F(EnterpriseSearchAggregatorProviderTest, ParseAndModifyImageUrls) {
   ACMatches matches = provider_->matches_;
   ASSERT_EQ(matches.size(), 4u);
 
-  EXPECT_EQ(matches[0].contents, u"john@example.com");
+  EXPECT_EQ(matches[0].contents, u"www.google.com/?q=john%40example.com");
   EXPECT_EQ(matches[0].description, u"John Doe");
   EXPECT_EQ(matches[0].image_url,
-            GURL("https://lh3.googleusercontent.com/some/path=s64"));
+            GURL("https://lh3.googleusercontent.com/some/path-s100=s64"));
 
-  EXPECT_EQ(matches[1].contents, u"john2@example.com");
+  EXPECT_EQ(matches[1].contents, u"www.google.com/?q=john2%40example.com");
   EXPECT_EQ(matches[1].description, u"John Doe2");
   EXPECT_EQ(matches[1].image_url,
             GURL("https://lh3.googleusercontent.com/some/path=s100"));
 
-  EXPECT_EQ(matches[2].contents, u"john3@example.com");
+  EXPECT_EQ(matches[2].contents, u"www.google.com/?q=john3%40example.com");
   EXPECT_EQ(matches[2].description, u"John Doe3");
   EXPECT_EQ(matches[2].image_url,
             GURL("https://lh3.googleusercontent.com/some/path=abc-s64"));
 
-  EXPECT_EQ(matches[3].contents, u"john4@example.com");
+  EXPECT_EQ(matches[3].contents, u"www.google.com/?q=john4%40example.com");
   EXPECT_EQ(matches[3].description, u"John Doe4");
   EXPECT_EQ(matches[3].image_url,
             GURL("https://lh3.googleusercontent.com/some/path=w100-h200"));
@@ -1244,7 +1281,7 @@ TEST_F(EnterpriseSearchAggregatorProviderTest, Limits) {
           ScoredMatch{u"https://www.google.com/?q=mango-2-query", 206}));
 }
 
-TEST_F(EnterpriseSearchAggregatorProviderTest, Relevance) {
+TEST_F(EnterpriseSearchAggregatorProviderTest, LocalRelevanceScoring) {
   // Results that don't match the input should be filtered out.
   provider_->adjusted_input_ = CreateInput(u"match m", true);
   ParseResponse(CreateResponse(
@@ -1473,25 +1510,25 @@ TEST_F(EnterpriseSearchAggregatorProviderTest, Relevance) {
   EXPECT_THAT(GetScoredMatches(), testing::ElementsAre(FieldsAre(_, 0)));
 
   // People matches should be boosted.
-  provider_->adjusted_input_ = CreateInput(u"query q", true);
+  provider_->adjusted_input_ = CreateInput(u"input i", true);
   ParseResponse(CreateResponse(
       {
-          CreateQueryResult("query"),
+          CreateQueryResult("input"),
       },
       {
-          CreatePeopleResult("displayName query", "userName", "givenName",
+          CreatePeopleResult("displayName input", "userName", "givenName",
                              "familyName"),
           CreatePeopleResult("displayName", "NoMatchUserName", "givenName",
                              "familyName"),
       },
       {
-          CreateContentResult("title query", "mime_type", "https://url/"),
+          CreateContentResult("title input", "mime_type", "https://url/"),
       }));
   EXPECT_THAT(GetScoredMatches(),
               testing::ElementsAre(
                   ScoredMatch{u"https://www.google.com/?q=userName", 610},
                   ScoredMatch{u"https://url/", 520},
-                  ScoredMatch{u"https://www.google.com/?q=query", 510},
+                  ScoredMatch{u"https://www.google.com/?q=input", 510},
                   FieldsAre(_, 0)));
 
   // People matches must match all input words.

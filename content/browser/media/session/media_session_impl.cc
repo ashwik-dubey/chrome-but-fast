@@ -11,6 +11,7 @@
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
@@ -1321,7 +1322,7 @@ void MediaSessionImpl::EnterAutoPictureInPicture() {
       media_session::mojom::MediaSessionAction::kEnterPictureInPicture);
   uma_helper_.RecordEnterPictureInPicture(
       MediaSessionUmaHelper::EnterPictureInPictureType::kRegisteredAutomatic);
-  OnAutoPictureInPictureInfoChanged();
+  ReportAutoPictureInPictureInfoChanged();
 }
 
 void MediaSessionImpl::SetAudioSinkId(const std::optional<std::string>& id) {
@@ -1429,6 +1430,21 @@ void MediaSessionImpl::GetMediaImageBitmap(
                      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
                          std::move(callback), SkBitmap()),
                      minimum_size_px, desired_size_px, source_icon));
+}
+
+void MediaSessionImpl::ReportAutoPictureInPictureInfoChanged() {
+  ContentClient* content_client = GetContentClient();
+  const auto auto_picture_in_picture_info =
+      media::PictureInPictureEventsInfo::AutoPipInfoToString(
+          content_client->browser()->GetAutoPipInfo(*web_contents()));
+
+  ForAllPlayers(base::BindRepeating(
+      [](std::string_view auto_picture_in_picture_info,
+         const PlayerIdentifier& player) {
+        player.observer->OnAutoPictureInPictureInfoChanged(
+            player.player_id, auto_picture_in_picture_info);
+      },
+      auto_picture_in_picture_info));
 }
 
 void MediaSessionImpl::AbandonSystemAudioFocusIfNeeded() {
@@ -2160,21 +2176,6 @@ void MediaSessionImpl::ResetDurationUpdateGuard() {
   duration_update_allowance_ = kDurationUpdateMaxAllowance;
   is_throttling_ = false;
   guarding_player_id_.reset();
-}
-
-void MediaSessionImpl::OnAutoPictureInPictureInfoChanged() {
-  ContentClient* content_client = GetContentClient();
-  const auto auto_picture_in_picture_reason =
-      media::PictureInPictureEventsInfo::AutoPipReasonToString(
-          content_client->browser()->GetAutoPipReason(*web_contents()));
-
-  ForAllPlayers(base::BindRepeating(
-      [](std::string_view auto_picture_in_picture_reason,
-         const PlayerIdentifier& player) {
-        player.observer->OnAutoPictureInPictureInfoChanged(
-            player.player_id, auto_picture_in_picture_reason);
-      },
-      auto_picture_in_picture_reason));
 }
 
 void MediaSessionImpl::SetShouldThrottleDurationUpdateForTest(

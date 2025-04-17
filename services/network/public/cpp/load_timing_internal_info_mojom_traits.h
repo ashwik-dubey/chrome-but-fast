@@ -18,7 +18,7 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
                  net::LoadTimingInternalInfo> {
   static const base::TimeDelta& create_stream_delay(
       const net::LoadTimingInternalInfo& info);
-  static const base::TimeDelta& url_request_delegate_connected_delay(
+  static const base::TimeDelta& connected_callback_delay(
       const net::LoadTimingInternalInfo& info);
   static const base::TimeDelta& initialize_stream_delay(
       const net::LoadTimingInternalInfo& info);

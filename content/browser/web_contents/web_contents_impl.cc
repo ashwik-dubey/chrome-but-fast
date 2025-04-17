@@ -155,6 +155,7 @@
 #include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
 #include "content/public/browser/navigation_details.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/preload_pipeline_info.h"
 #include "content/public/browser/preview_cancel_reason.h"
 #include "content/public/browser/render_widget_host_iterator.h"
@@ -522,8 +523,10 @@ bool IsWindowManagementGranted(RenderFrameHost* host) {
   CHECK(permission_controller);
 
   return permission_controller->GetPermissionStatusForCurrentDocument(
-             blink::PermissionType::WINDOW_MANAGEMENT, host) ==
-         blink::mojom::PermissionStatus::GRANTED;
+             content::PermissionDescriptorUtil::
+                 CreatePermissionDescriptorForPermissionType(
+                     blink::PermissionType::WINDOW_MANAGEMENT),
+             host) == blink::mojom::PermissionStatus::GRANTED;
 }
 
 // Returns true if `host` has the Automatic Fullscreen permission granted.
@@ -533,8 +536,10 @@ bool IsAutomaticFullscreenGranted(RenderFrameHost* host) {
   CHECK(permission_controller);
 
   return permission_controller->GetPermissionStatusForCurrentDocument(
-             blink::PermissionType::AUTOMATIC_FULLSCREEN, host) ==
-         blink::mojom::PermissionStatus::GRANTED;
+             content::PermissionDescriptorUtil::
+                 CreatePermissionDescriptorForPermissionType(
+                     blink::PermissionType::AUTOMATIC_FULLSCREEN),
+             host) == blink::mojom::PermissionStatus::GRANTED;
 }
 
 // Adjust the requested `rect` for opening or placing a window and return the id
@@ -2175,12 +2180,6 @@ void WebContentsImpl::ResetAccessibility() {
       });
 }
 
-void WebContentsImpl::AddAccessibilityModeForTesting(ui::AXMode mode) {
-  ui::AXMode new_mode(accessibility_mode_);
-  new_mode |= mode;
-  SetAccessibilityMode(new_mode);
-}
-
 // Helper class used by WebContentsImpl::RequestAXTreeSnapshot.
 // Handles the callbacks from parallel snapshot requests to each frame,
 // and feeds the results to an AXTreeCombiner, which converts them into a
@@ -3059,6 +3058,11 @@ WebContentsImpl::GetPictureInPictureOptions() const {
 }
 
 #if BUILDFLAG(IS_ANDROID)
+ChildProcessImportance
+WebContentsImpl::GetPrimaryMainFrameImportanceForTesting() {
+  return GetPrimaryMainFrame()->GetRenderWidgetHost()->importance();
+}
+
 void WebContentsImpl::SetPrimaryMainFrameImportance(
     ChildProcessImportance importance) {
   OPTIONAL_TRACE_EVENT1("content", "WebContentsImpl::SetMainFrameImportance",
@@ -7254,9 +7258,9 @@ gfx::NativeWindow WebContentsImpl::GetOwnerNativeWindow() {
   return GetTopLevelNativeWindow();
 }
 
-media::PictureInPictureEventsInfo::AutoPipReason
-WebContentsImpl::GetAutoPipReason() const {
-  return GetContentClient()->browser()->GetAutoPipReason(*this);
+media::PictureInPictureEventsInfo::AutoPipInfo WebContentsImpl::GetAutoPipInfo()
+    const {
+  return GetContentClient()->browser()->GetAutoPipInfo(*this);
 }
 
 void WebContentsImpl::NotifyChangedNavigationState(
@@ -11091,10 +11095,6 @@ void WebContentsImpl::MediaStartedPlaying(
     const WebContentsObserver::MediaPlayerInfo& media_info,
     const MediaPlayerId& id) {
   OPTIONAL_TRACE_EVENT0("content", "WebContentsImpl::MediaStartedPlaying");
-  if (media_info.has_video) {
-    currently_playing_video_count_++;
-  }
-
   observers_.NotifyObservers(&WebContentsObserver::MediaStartedPlaying,
                              media_info, id);
 }
@@ -11104,12 +11104,15 @@ void WebContentsImpl::MediaStoppedPlaying(
     const MediaPlayerId& id,
     WebContentsObserver::MediaStoppedReason reason) {
   OPTIONAL_TRACE_EVENT0("content", "WebContentsImpl::MediaStoppedPlaying");
-  if (media_info.has_video) {
-    currently_playing_video_count_--;
-  }
-
   observers_.NotifyObservers(&WebContentsObserver::MediaStoppedPlaying,
                              media_info, id, reason);
+}
+
+void WebContentsImpl::MediaMetadataChanged(
+    const WebContentsObserver::MediaPlayerInfo& media_info,
+    const MediaPlayerId& id) {
+  observers_.NotifyObservers(&WebContentsObserver::MediaMetadataChanged,
+                             media_info, id);
 }
 
 void WebContentsImpl::MediaResized(const gfx::Size& size,
@@ -11138,8 +11141,8 @@ void WebContentsImpl::MediaSessionCreated(MediaSession* media_session) {
                              media_session);
 }
 
-int WebContentsImpl::GetCurrentlyPlayingVideoCount() {
-  return currently_playing_video_count_;
+int WebContentsImpl::GetCurrentlyPlayingVideoCount() const {
+  return media_web_contents_observer_->GetCurrentlyPlayingVideoCount();
 }
 
 std::optional<gfx::Size> WebContentsImpl::GetFullscreenVideoSize() {

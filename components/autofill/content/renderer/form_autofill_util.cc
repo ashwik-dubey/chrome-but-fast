@@ -284,11 +284,8 @@ bool IsSelectElement(const WebFormControlElement& element) {
 
 bool IsCheckableElement(const WebFormControlElement& element) {
   using enum blink::mojom::FormControlType;
-  // We intentionally use `FormControlType()` instead of
-  // `FormControlTypeForAutofill()` because the existing callers do not care if
-  // the field has ever been a password field before.
-  return element && (element.FormControlType() == kInputCheckbox ||  // nocheck
-                     element.FormControlType() == kInputRadio);      // nocheck
+  return element && (element.FormControlTypeForAutofill() == kInputCheckbox ||
+                     element.FormControlTypeForAutofill() == kInputRadio);
 }
 
 bool IsCheckableElement(const WebElement& element) {
@@ -1043,43 +1040,6 @@ std::optional<InferredLabel> InferLabelFromAncestors(
   return std::nullopt;
 }
 
-// The first <option> of <select> elements sometimes represents a default value
-// like <option>Select country</option> (with no value attribute). In this case,
-// the text of this <option> is a useful label.
-// `InferLabelFromDefaultSelectValue()` attempts to decide if this is the case,
-// by checking if only the first <option> is lacking a value.
-std::optional<InferredLabel> InferLabelFromDefaultSelectText(
-    const WebFormControlElement& element) {
-  if (!base::FeatureList::IsEnabled(
-          features::kAutofillInferLabelFromDefaultSelectText)) {
-    return std::nullopt;
-  }
-  CHECK(IsSelectElement(element));
-  std::vector<WebElement> options =
-      element.To<WebSelectElement>().GetListItems();
-  // `options` can contain other elements like <optgroup>.
-  std::erase_if(options, [](const WebElement& e) {
-    return !e.DynamicTo<WebOptionElement>();
-  });
-  auto has_non_empty_value_attribute = [](const WebElement& e) {
-    // If an <option>'s value is unspecified, it default to its text content.
-    // For this reason the `HasAttribute<>()` check is necessary.
-    if (!HasAttribute<kValue>(e)) {
-      return false;
-    }
-    std::u16string value = GetAttribute<kValue>(e).Utf16();
-    base::TrimWhitespace(value, base::TRIM_ALL, &value);
-    return !value.empty();
-  };
-  if (options.size() >= 2 && !has_non_empty_value_attribute(options[0]) &&
-      std::all_of(options.begin() + 1, options.end(),
-                  has_non_empty_value_attribute)) {
-    return InferredLabel::BuildIfValid(FindChildText(options[0]),
-                                       LabelSource::kDefaultSelectText);
-  }
-  return std::nullopt;
-}
-
 // Infers corresponding label for `element` from surrounding context in the DOM,
 // e.g. the contents of the preceding <p> tag or text element. Returns an empty
 // string if it could not find a label for `element`.
@@ -1109,11 +1069,6 @@ std::optional<InferredLabel> InferLabelForElement(
   // If we didn't find a label, check the `element`'s ancestors.
   if (auto r = InferLabelFromAncestors(element)) {
     return r;
-  }
-  if (IsSelectElement(element)) {
-    if (auto r = InferLabelFromDefaultSelectText(element)) {
-      return r;
-    }
   }
   // If we didn't find a label, check the value attr used as the placeholder.
   if (auto r = InferLabelFromValueAttribute(element)) {
@@ -2259,13 +2214,19 @@ InferredLabel::InferredLabel(std::u16string label, LabelSource source)
 std::optional<InferredLabel> InferredLabel::BuildIfValid(std::u16string label,
                                                          LabelSource source) {
   // List of characters a label can't be entirely made of (this list can grow).
-  const std::u16string_view invalid_chars =
-      u"+*:-\u2013()";  // U+2013 is the En Dash "–".
-  auto is_valid_label_character = [&invalid_chars](char16_t c) {
-    return !base::Contains(invalid_chars, c) &&
+  // LINT.IfChange(InvalidLabelCriteria)
+  auto is_valid_label_character = [](char16_t c) {
+    static constexpr std::u16string_view kInvalidChars =
+        u"+*:-\u2013()/.";  // U+2013 is the En Dash "–".
+    return !base::Contains(kInvalidChars, c) &&
            !base::Contains(std::u16string_view(base::kWhitespaceUTF16), c);
   };
-  if (std::ranges::any_of(label, is_valid_label_character)) {
+  auto is_slash_or_dot = [](char16_t c) { return c == u'/' || c == u'.'; };
+  // LINT.ThenChange(/components/autofill/ios/form_util/resources/fill_element_inference_util.ts:InvalidLabelCriteria)
+  if (std::ranges::any_of(label, is_valid_label_character) ||
+      (std::ranges::any_of(label, is_slash_or_dot) &&
+       !base::FeatureList::IsEnabled(
+           features::kAutofillDisallowSlashDotLabels))) {
     base::TrimWhitespace(label, base::TRIM_ALL, &label);
     return InferredLabel{std::move(label), source};
   }

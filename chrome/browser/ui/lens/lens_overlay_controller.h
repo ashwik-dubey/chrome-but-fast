@@ -48,6 +48,7 @@
 #include "components/lens/lens_overlay_side_panel_result.h"
 #include "components/lens/proto/server/lens_overlay_response.pb.h"
 #include "components/omnibox/browser/autocomplete_match_type.h"
+#include "components/omnibox/browser/lens_suggest_inputs_utils.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
 #include "components/sessions/core/session_id.h"
 #include "components/tabs/public/tab_interface.h"
@@ -454,6 +455,12 @@ class LensOverlayController : public LensSearchboxClient,
   // Whether it's possible to capture a screenshot. virtual for testing.
   virtual bool IsScreenshotPossible(content::RenderWidgetHostView* view);
 
+  // Waits for the handshake with the Lens backend to complete and then invokes
+  // the callback with the LensOverlaySuggestInputs. Callback will be invoked
+  // immediately if the handshake is already complete.
+  base::CallbackListSubscription GetLensSuggestInputsWhenReady(
+      LensOverlaySuggestInputsCallback callback);
+
   // Called before the lens results panel begins hiding. This is called before
   // any side panel closing animations begin.
   void OnSidePanelWillHide(SidePanelEntryHideReason reason);
@@ -490,6 +497,9 @@ class LensOverlayController : public LensSearchboxClient,
 
   // Updates the metrics related to navigations for the current page.
   void UpdateNavigationMetrics();
+
+  // Returns whether the handshake with the Lens backend is complete.
+  bool IsHandshakeComplete();
 
   // Testing function to issue a Lens region selection request.
   void IssueLensRegionRequestForTesting(lens::mojom::CenterRotatedBoxPtr region,
@@ -688,6 +698,10 @@ class LensOverlayController : public LensSearchboxClient,
     // index holds the text of the PDF page at the same index.
     std::vector<std::u16string> pdf_pages_text_;
 
+    // The most visible page of the PDF document when the viewport was last
+    // updated, if page_content_type_ is kPdf.
+    std::optional<uint32_t> last_retrieved_most_visible_page_;
+
     // Bounding boxes for significant regions identified in the screenshot.
     std::vector<lens::mojom::CenterRotatedBoxPtr> significant_region_boxes_;
 
@@ -741,6 +755,14 @@ class LensOverlayController : public LensSearchboxClient,
   // Fetches the bounding boxes of all images within the current viewport.
   void FetchViewportImageBoundingBoxes(const SkBitmap& bitmap);
 
+  // Gets the current page number if viewing a PDF.
+  void GetPdfCurrentPage(
+      mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame>
+          chrome_render_frame,
+      int attempt_id,
+      const SkBitmap& bitmap,
+      const std::vector<gfx::Rect>& bounds);
+
   // Called once a screenshot has been captured. This should trigger transition
   // to kOverlay. As this process is asynchronous, there are edge cases that can
   // result in multiple in-flight screenshot attempts. We record the
@@ -753,17 +775,20 @@ class LensOverlayController : public LensSearchboxClient,
           chrome_render_frame,
       int attempt_id,
       const SkBitmap& bitmap,
-      const std::vector<gfx::Rect>& bounds);
+      const std::vector<gfx::Rect>& bounds,
+      std::optional<uint32_t> pdf_current_page);
 
   // Process the bitmap and creates all necessary data to initialize the
   // overlay. Happens on a separate thread to prevent main thread from hanging.
   void CreateInitializationData(const SkBitmap& screenshot,
-                                const std::vector<gfx::Rect>& all_bounds);
+                                const std::vector<gfx::Rect>& all_bounds,
+                                std::optional<uint32_t> pdf_current_page);
 
   // Called after creating the RGB bitmap and we are back on the main thread.
   void ContinueCreateInitializationData(
       const SkBitmap& screenshot,
       const std::vector<gfx::Rect>& all_bounds,
+      std::optional<uint32_t> pdf_current_page,
       SkBitmap rgb_screenshot);
 
   // Stores the page content and continues the initialization process. Also
@@ -791,11 +816,6 @@ class LensOverlayController : public LensSearchboxClient,
   // Fetches the visible page index from the PDF renderer and then starts the
   // process of fetching the text from the PDF to be used for suggest signals.
   void FetchVisiblePageIndexAndGetPartialPdfText(uint32_t page_count);
-
-  // Starts the process of fetching the text from the PDF to be used for suggest
-  // signals.
-  void GetPartialPdfText(uint32_t page_count,
-                         std::optional<uint32_t> visible_page_index);
 
   // Gets the partial text from the PDF to be used for suggest. Schedules for
   // the next page of text to be fetched, from the PDF in page order until
@@ -862,14 +882,23 @@ class LensOverlayController : public LensSearchboxClient,
                                    lens::MimeType primary_content_type,
                                    std::optional<uint32_t> pdf_page_count);
 
-  // Updates the query flow with the new page content bytes and/or screenshot. A
-  // request will only be sent if the bytes are different from the previous
-  // bytes sent or the screenshot is different from the previous screenshot.
+  // Continue updating page contextualization by potentially getting the current
+  // PDF page.
   void UpdatePageContextualizationPart2(
       std::vector<lens::PageContent> page_contents,
       lens::MimeType primary_content_type,
       std::optional<uint32_t> pdf_page_count,
       const SkBitmap& bitmap);
+
+  // Updates the query flow with the new page content bytes and/or screenshot. A
+  // request will only be sent if the bytes are different from the previous
+  // bytes sent or the screenshot is different from the previous screenshot.
+  void UpdatePageContextualizationPart3(
+      std::vector<lens::PageContent> page_contents,
+      lens::MimeType primary_content_type,
+      std::optional<uint32_t> pdf_page_count,
+      const SkBitmap& bitmap,
+      std::optional<uint32_t> pdf_current_page);
 
   // Updates state of the ghost loader. |suppress_ghost_loader| is true when
   // the page bytes can't be uploaded.
@@ -956,6 +985,9 @@ class LensOverlayController : public LensSearchboxClient,
   void OnImmersiveFullscreenEntered() override;
   void OnImmersiveFullscreenExited() override;
 
+  // Called when the Lens backend handshake is complete.
+  void OnHandshakeComplete();
+
   // Overridden from LensSearchboxClient:
   const GURL& GetPageURL() const override;
   SessionID GetTabId() const override;
@@ -973,6 +1005,11 @@ class LensOverlayController : public LensSearchboxClient,
   void OnPageBound() override;
   void ShowGhostLoaderErrorState() override;
   void OnZeroSuggestShown() override;
+
+  // Adds a callback to be called when the Lens backend handshake is finished.
+  // If the handshake is already finished, the callback will be called
+  // immediately.
+  void OnLensBackendHandshakeFinished(base::OnceClosure callback);
 
   // Gets the page title.
   std::optional<std::string> GetPageTitle();
@@ -1297,6 +1334,12 @@ class LensOverlayController : public LensSearchboxClient,
 
   // Holds subscriptions for TabInterface callbacks.
   std::vector<base::CallbackListSubscription> tab_subscriptions_;
+
+  // The callbacks pending the handshake to complete so the Lens suggest inputs
+  // can be retrieved.
+  base::OnceCallbackList<void(
+      std::optional<lens::proto::LensOverlaySuggestInputs>)>
+      pending_suggest_inputs_callbacks_;
 
   // Owned by Profile, and thus guaranteed to outlive this instance.
   raw_ptr<variations::VariationsClient> variations_client_;

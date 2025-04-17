@@ -223,16 +223,7 @@ BrowserAccessibilityStateImpl::BrowserAccessibilityStateImpl()
       if (ax_mode_bundle.compare(kAXModeBundleBasic) == 0) {
         initial_mode = ui::kAXModeBasic;
       } else if (ax_mode_bundle.compare(kAXModeBundleFormControls) == 0) {
-#if BUILDFLAG(IS_ANDROID)
         initial_mode = ui::kAXModeFormControls;
-#else
-        // TODO(crbug.com/40943426) Reenable the flag on non-Android, after
-        // resolving fuzzer issue.
-        DVLOG(1) << "Currently, --force-renderer-accessibility=form-controls "
-                    "is only supported on Android. Basic mode has been "
-                    "enabled instead.";
-        initial_mode = ui::kAXModeBasic;
-#endif
       } else {
         // If AXMode is 'complete' or invalid, default to complete bundle.
         initial_mode = ui::kAXModeComplete;
@@ -270,19 +261,6 @@ void BrowserAccessibilityStateImpl::SetScreenReaderAppActive(bool is_active) {
 
 ui::AssistiveTech BrowserAccessibilityStateImpl::ActiveAssistiveTech() const {
   return ui::AXPlatform::GetInstance().active_assistive_tech();
-}
-
-void BrowserAccessibilityStateImpl::EnableProcessAccessibility() {
-  SetProcessMode(ui::kAXModeComplete);
-}
-
-bool BrowserAccessibilityStateImpl::IsAccessibilityAllowed() {
-  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableRendererAccessibility);
-}
-
-void BrowserAccessibilityStateImpl::DisableProcessAccessibility() {
-  SetProcessMode(ui::AXMode());
 }
 
 void BrowserAccessibilityStateImpl::SetPerformanceFilteringAllowed(
@@ -400,7 +378,8 @@ void BrowserAccessibilityStateImpl::OnUserInputEvent() {
                                   now - accessibility_enabled_time_);
 
       accessibility_disabled_time_ = now;
-      DisableProcessAccessibility();
+      // TODO(aleventhal): prefer making a11y dormant for new page loads.
+      SetProcessMode(ui::AXMode());
     }
   }
 }

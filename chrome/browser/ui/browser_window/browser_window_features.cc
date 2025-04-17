@@ -33,6 +33,7 @@
 #include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_utils.h"
 #include "chrome/browser/ui/tabs/saved_tab_groups/session_service_tab_group_sync_observer.h"
 #include "chrome/browser/ui/tabs/saved_tab_groups/shared_tab_group_feedback_controller.h"
+#include "chrome/browser/ui/tabs/tab_strip_api/tab_strip_controller_impl.h"
 #include "chrome/browser/ui/toasts/toast_controller.h"
 #include "chrome/browser/ui/toasts/toast_features.h"
 #include "chrome/browser/ui/toasts/toast_service.h"
@@ -43,6 +44,7 @@
 #include "chrome/browser/ui/views/download/bubble/download_toolbar_ui_controller.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
+#include "chrome/browser/ui/views/location_bar/cookie_controls/cookie_controls_bubble_coordinator.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/media_router/cast_browser_controller.h"
 #include "chrome/browser/ui/views/send_tab_to_self/send_tab_to_self_toolbar_bubble_controller.h"
@@ -160,11 +162,19 @@ void BrowserWindowFeatures::Init(BrowserWindowInterface* browser) {
 
   tab_strip_model_ = browser->GetTabStripModel();
 
+  if (base::FeatureList::IsEnabled(features::kTabStripBrowserApi)) {
+    tab_strip_controller_ =
+        std::make_unique<TabStripControllerImpl>(browser, tab_strip_model_);
+  }
+
   memory_saver_bubble_controller_ =
       std::make_unique<memory_saver::MemorySaverBubbleController>(browser);
 
   translate_bubble_controller_ = std::make_unique<TranslateBubbleController>(
       browser->GetActions()->root_action_item());
+
+  cookie_controls_bubble_coordinator_ =
+      std::make_unique<CookieControlsBubbleCoordinator>();
 }
 
 void BrowserWindowFeatures::InitPostWindowConstruction(Browser* browser) {

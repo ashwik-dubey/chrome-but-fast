@@ -26,13 +26,17 @@
 #include "extensions/common/extension_id.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 
+namespace base {
+class CommandLine;
+}  // namespace base
+
 namespace content {
 class BrowserContext;
 class DevToolsAgentHost;
 }  // namespace content
 
 namespace extensions {
-
+class DelayedInstallManager;
 class Extension;
 class ExtensionHost;
 class ExtensionPrefs;
@@ -92,11 +96,6 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
         scoped_refptr<const Extension> extension,
         base::OnceClosure done_callback) = 0;
 
-    // Called after |extension| un-installation event has been notified to
-    // all observers.
-    virtual void PostNotifyUninstallExtension(
-        scoped_refptr<const Extension> extension) = 0;
-
     // Given an extension ID and/or path, loads that extension as a reload.
     virtual void LoadExtensionForReload(
         const ExtensionId& extension_id,
@@ -109,10 +108,6 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
     virtual void ShowExtensionDisabledError(const Extension* extension,
                                             bool is_remote_install) = 0;
 
-    // Finishes the deplayed installations if there are any delayed
-    // extensions ready to be installed.
-    virtual void FinishDelayedInstallationsIfAny() = 0;
-
     // Returns true if the extension is allowed to be enabled or disabled,
     // respectively.
     virtual bool CanEnableExtension(const Extension* extension) = 0;
@@ -124,6 +119,20 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
 
     // Checks if there are any new external extensions to notify the user about.
     virtual void UpdateExternalExtensionAlert() = 0;
+
+    // Informs the service that an extension's files are in place for loading.
+    //
+    // |extension|                the extension
+    // |page_ordinal|             the location of the extension in the app
+    //                            launcher
+    // |install_flags|            a bitmask of InstallFlags
+    // |ruleset_install_prefs|    Install prefs needed for the Declarative Net
+    //                            Request API.
+    virtual void OnExtensionInstalled(
+        const Extension* extension,
+        const syncer::StringOrdinal& page_ordinal,
+        int install_flags,
+        base::Value::Dict ruleset_install_prefs) = 0;
   };
 
   explicit ExtensionRegistrar(content::BrowserContext* browser_context);
@@ -140,6 +149,7 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
   // times, for example to reset the delegate in tests.
   void Init(Delegate* delegate,
             bool extensions_enabled,
+            const base::CommandLine* command_line,
             const base::FilePath& install_directory,
             const base::FilePath& unpacked_install_directory);
 
@@ -166,6 +176,24 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
                                 const syncer::StringOrdinal& page_ordinal,
                                 const std::string& install_parameter,
                                 base::Value::Dict ruleset_install_prefs);
+
+  // Informs the service that an extension's files are in place for loading.
+  //
+  // |extension|                the extension
+  // |page_ordinal|             the location of the extension in the app
+  //                            launcher
+  // |install_flags|            a bitmask of InstallFlags
+  // |ruleset_install_prefs|    Install prefs needed for the Declarative Net
+  //                            Request API.
+  void OnExtensionInstalled(const Extension* extension,
+                            const syncer::StringOrdinal& page_ordinal,
+                            int install_flags,
+                            base::Value::Dict ruleset_install_prefs = {});
+  void OnExtensionInstalled(const Extension* extension,
+                            const syncer::StringOrdinal& page_ordinal) {
+    OnExtensionInstalled(extension, page_ordinal,
+                         static_cast<int>(kInstallFlagNone));
+  }
 
   // Removes |extension| from the extension system by deactivating it if it is
   // enabled and removing references to it from the ExtensionRegistry's
@@ -407,6 +435,7 @@ class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
   const raw_ptr<ExtensionPrefs> extension_prefs_;
   const raw_ptr<ExtensionRegistry> registry_;
   const raw_ptr<RendererStartupHelper> renderer_helper_;
+  raw_ptr<DelayedInstallManager> delayed_install_manager_ = nullptr;
 
   // Map of DevToolsAgentHost instances that are detached,
   // waiting for an extension to be reloaded.

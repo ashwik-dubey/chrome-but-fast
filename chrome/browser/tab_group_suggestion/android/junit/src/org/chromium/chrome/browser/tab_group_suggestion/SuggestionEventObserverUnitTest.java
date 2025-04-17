@@ -41,6 +41,7 @@ import org.chromium.chrome.browser.tab.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
+import org.chromium.components.embedder_support.util.UrlConstants;
 import org.chromium.components.visited_url_ranking.url_grouping.GroupSuggestionsService;
 import org.chromium.url.GURL;
 
@@ -71,6 +72,7 @@ public class SuggestionEventObserverUnitTest {
         when(mTabModel.getProfile()).thenReturn(mProfile);
         doNothing().when(mTabModel).addObserver(mTabModelObserverCaptor.capture());
         when(mTab.getId()).thenReturn(TAB_ID);
+        when(mTab.getUrl()).thenReturn(new GURL("https://foo.com"));
         mHubVisibilitySupplier = new ObservableSupplierImpl<>();
         when(mHubManager.getHubVisibilitySupplier()).thenReturn(mHubVisibilitySupplier);
         when(mHubManager.getPaneManager()).thenReturn(mPaneManager);
@@ -99,6 +101,14 @@ public class SuggestionEventObserverUnitTest {
         mTabModelObserverCaptor.getValue().didSelectTab(mTab, TabSelectionType.FROM_CLOSE, 0);
         mTabModelObserverCaptor.getValue().didSelectTab(mTab, TabSelectionType.FROM_EXIT, 0);
         mTabModelObserverCaptor.getValue().didSelectTab(mTab, TabSelectionType.FROM_UNDO, 0);
+
+        verify(mGroupSuggestionsService, never()).didSelectTab(anyInt(), anyInt(), anyInt());
+    }
+
+    @Test
+    public void testDidSelectTab_IgnoreNTP() {
+        when(mTab.getUrl()).thenReturn(new GURL(UrlConstants.NTP_URL));
+        mTabModelObserverCaptor.getValue().didSelectTab(mTab, TabSelectionType.FROM_USER, 0);
 
         verify(mGroupSuggestionsService, never()).didSelectTab(anyInt(), anyInt(), anyInt());
     }
@@ -187,18 +197,6 @@ public class SuggestionEventObserverUnitTest {
     }
 
     @Test
-    public void testTabNavigation_IncognitoTab() {
-        Tab incognitoTab = mock(Tab.class);
-        when(incognitoTab.isIncognitoBranded()).thenReturn(true);
-
-        mSuggestionEventObserver
-                .getTabModelSelectorTabObserverForTesting()
-                .onPageLoadFinished(incognitoTab, new GURL(""));
-
-        verify(mGroupSuggestionsService, never()).onPageLoadFinished(anyInt());
-    }
-
-    @Test
     public void testTabNavigation_NormalTab() {
         when(mTab.isIncognitoBranded()).thenReturn(false);
 
@@ -206,7 +204,28 @@ public class SuggestionEventObserverUnitTest {
                 .getTabModelSelectorTabObserverForTesting()
                 .onPageLoadFinished(mTab, new GURL(""));
 
+        verify(mGroupSuggestionsService, never()).onPageLoadFinished(anyInt());
+
+        mSuggestionEventObserver
+                .getTabModelSelectorTabObserverForTesting()
+                .onPageLoadFinished(mTab, new GURL(""));
+
         verify(mGroupSuggestionsService).onPageLoadFinished(eq(TAB_ID));
+    }
+
+    @Test
+    public void testTabNavigation_IncognitoTab() {
+        Tab incognitoTab = mock(Tab.class);
+        when(incognitoTab.isIncognitoBranded()).thenReturn(true);
+
+        mSuggestionEventObserver
+                .getTabModelSelectorTabObserverForTesting()
+                .onPageLoadFinished(incognitoTab, new GURL(""));
+        mSuggestionEventObserver
+                .getTabModelSelectorTabObserverForTesting()
+                .onPageLoadFinished(incognitoTab, new GURL(""));
+
+        verify(mGroupSuggestionsService, never()).onPageLoadFinished(anyInt());
     }
 
     @Test

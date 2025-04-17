@@ -7,6 +7,7 @@
 #include "base/base64.h"
 #include "base/base64url.h"
 #include "base/containers/contains.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/branding_buildflags.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
@@ -94,8 +95,12 @@ const char* kJourneysIconResourceName =
     "//resources/cr_components/searchbox/icons/journeys.svg";
 const char* kPageIconResourceName =
     "//resources/cr_components/searchbox/icons/page.svg";
+const char* kPageSparkIconResourceName =
+    "//resources/cr_components/searchbox/icons/page_spark.svg";
 const char* kPedalsIconResourceName = "//theme/current-channel-logo";
 const char* kSearchIconResourceName = "//resources/images/icon_search.svg";
+const char* kSearchSparkIconResourceName =
+    "//resources/cr_components/searchbox/icons/search_spark.svg";
 const char* kSparkIconResourceName =
     "//resources/cr_components/searchbox/icons/spark.svg";
 const char* kStarActiveIconResourceName =
@@ -593,6 +598,9 @@ std::string SearchboxHandler::ActionVectorIconToResourceName(
       icon.name == omnibox::kJourneysChromeRefreshIcon.name) {
     return kJourneysIconResourceName;
   }
+  if (icon.name == omnibox::kPageSparkIcon.name) {
+    return kPageSparkIconResourceName;
+  }
   if (icon.name == omnibox::kPedalIcon.name ||
       icon.name == omnibox::kProductChromeRefreshIcon.name) {
     return kPedalsIconResourceName;
@@ -618,6 +626,9 @@ std::string SearchboxHandler::ActionVectorIconToResourceName(
     return kShareIconResourceName;
   }
 #endif
+  if (icon.name == omnibox::kSearchSparkIcon.name) {
+    return kSearchSparkIconResourceName;
+  }
   if (icon.name == omnibox::kSparkIcon.name) {
     return kSparkIconResourceName;
   }

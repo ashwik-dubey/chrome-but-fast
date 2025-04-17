@@ -34,7 +34,6 @@
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/task/single_thread_task_runner.h"
-#include "chromeos/constants/chromeos_features.h"
 #include "chromeos/ui/base/window_properties.h"
 #include "chromeos/ui/base/window_state_type.h"
 #include "chromeos/ui/frame/frame_utils.h"
@@ -209,8 +208,8 @@ ScopedOverviewTransformWindow::ScopedOverviewTransformWindow(
   // scrolls, they get scrolled underneath the split view window. The window
   // will be returned to its proper z-order on exiting overview if it is
   // activated.
-  // TODO(sammiequon): This does not handle the case if either the snapped
-  // window or this window is an always on top window.
+  // TODO: This does not handle the case if either the snapped window or this
+  // window is an always on top window.
   if (auto* split_view_controller =
           SplitViewController::Get(Shell::GetPrimaryRootWindow());
       ShouldUseTabletModeGridLayout() &&
@@ -407,8 +406,7 @@ void ScopedOverviewTransformWindow::SetClipping(const gfx::Rect& clip_rect) {
   }
 
   ui::Layer* layer = window_->layer();
-  // TODO(sammiequon): Investigate why we cannot use
-  // `ui::Layer::GetTargetClipRect()` here.
+  // TODO: Investigate why we cannot use `ui::Layer::GetTargetClipRect()` here.
   if (layer->GetAnimator()->GetTargetClipRect() == clip_rect) {
     return;
   }
@@ -567,10 +565,6 @@ void ScopedOverviewTransformWindow::UpdateRoundedCorners(bool show) {
       has_rounding ? window_util::GetMiniWindowRoundedCorners(
                          window(), /*include_header_rounding=*/false, scale)
                    : gfx::RoundedCornersF(0));
-
-  if (!chromeos::features::IsRoundedWindowsEnabled()) {
-    return;
-  }
 
   gfx::RectF contents_bounds_in_root(contents_bounds_in_screen);
   wm::TranslateRectFromScreen(window_->GetRootWindow(),

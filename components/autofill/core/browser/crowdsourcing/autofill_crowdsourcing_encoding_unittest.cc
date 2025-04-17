@@ -496,14 +496,24 @@ TEST_F(AutofillCrowdsourcingEncoding,
 
   ASSERT_EQ(form_structure->field_count(), possible_field_types.size());
 
+  EncodeUploadRequestOptions options;
+  options.encoder = RandomizedEncoder(
+      "seed for testing", AutofillRandomizedValue_EncodingType_ALL_BITS,
+      /*anonymous_url_collection_is_enabled=*/true);
+  options.available_field_types = {NAME_FIRST, NAME_LAST, EMAIL_ADDRESS,
+                                   USERNAME, ACCOUNT_CREATION_PASSWORD};
+  options.login_form_signature = FormSignature(42);
+  options.observed_submission = true;
+
   for (size_t i = 0; i < form_structure->field_count(); ++i) {
     form_structure->field(i)->set_possible_types(possible_field_types[i]);
 
     if (form_structure->field(i)->name() == u"password") {
-      form_structure->field(i)->set_generation_type(
-          AutofillUploadContents::Field::
-              MANUALLY_TRIGGERED_GENERATION_ON_SIGN_UP_FORM);
-      form_structure->field(i)->set_generated_password_changed(true);
+      auto& field_options =
+          options.fields[form_structure->field(i)->global_id()];
+      field_options.generation_type = AutofillUploadContents::Field::
+          MANUALLY_TRIGGERED_GENERATION_ON_SIGN_UP_FORM;
+      field_options.generated_password_changed = true;
     }
     if (form_structure->field(i)->name() == u"username") {
       form_structure->field(i)->set_vote_type(
@@ -553,15 +563,6 @@ TEST_F(AutofillCrowdsourcingEncoding,
       AutofillUploadContents::Field::
           MANUALLY_TRIGGERED_GENERATION_ON_SIGN_UP_FORM);
   upload_password_field->set_generated_password_changed(true);
-
-  EncodeUploadRequestOptions options;
-  options.encoder = RandomizedEncoder(
-      "seed for testing", AutofillRandomizedValue_EncodingType_ALL_BITS,
-      /*anonymous_url_collection_is_enabled=*/true);
-  options.available_field_types = {NAME_FIRST, NAME_LAST, EMAIL_ADDRESS,
-                                   USERNAME, ACCOUNT_CREATION_PASSWORD};
-  options.login_form_signature = FormSignature(42);
-  options.observed_submission = true;
 
   EXPECT_THAT(EncodeUploadRequest(*form_structure, options),
               ElementsAre(WithoutMetadataSerializesSameAs(upload)));
@@ -1898,7 +1899,7 @@ TEST_F(AutofillCrowdsourcingEncoding, EncodeAutofillPageQueryRequest) {
 
   FormStructure form_structure(form);
 
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> forms;
+  std::vector<raw_ptr<const FormStructure, VectorExperimental>> forms;
   forms.push_back(&form_structure);
 
   std::vector<FormSignature> expected_signatures;
@@ -2027,7 +2028,7 @@ TEST_F(AutofillCrowdsourcingEncoding, EncodeAutofillPageQueryRequest) {
   EXPECT_THAT(encoded_query5, SerializesSameAs(query));
 
   // Check that we fail if there are only bad form(s).
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> bad_forms;
+  std::vector<raw_ptr<const FormStructure, VectorExperimental>> bad_forms;
   bad_forms.push_back(&malformed_form_structure);
   auto [encoded_query6, encoded_signatures6] =
       EncodeAutofillPageQueryRequest(bad_forms);
@@ -2047,7 +2048,7 @@ TEST_F(AutofillCrowdsourcingEncoding, SkipFieldTest) {
   });
 
   FormStructure form_structure(form);
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> forms;
+  std::vector<raw_ptr<const FormStructure, VectorExperimental>> forms;
   forms.push_back(&form_structure);
 
   // Create the expected query and serialize it to a string.
@@ -2085,7 +2086,7 @@ TEST_F(AutofillCrowdsourcingEncoding,
       .action = "http://cool.com/login",
   });
 
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> forms;
+  std::vector<raw_ptr<const FormStructure, VectorExperimental>> forms;
   FormStructure form_structure(form);
   forms.push_back(&form_structure);
 
@@ -2131,7 +2132,7 @@ TEST_F(AutofillCrowdsourcingEncoding,
   });
 
   FormStructure form_structure(form);
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> forms;
+  std::vector<raw_ptr<const FormStructure, VectorExperimental>> forms;
   forms.push_back(&form_structure);
 
   // Create the expected query and serialize it to a string.
@@ -2172,7 +2173,7 @@ TEST_F(AutofillCrowdsourcingEncoding,
     fs_field->set_host_form_signature(form_structure.form_signature());
   }
 
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> forms;
+  std::vector<raw_ptr<const FormStructure, VectorExperimental>> forms;
   forms.push_back(&form_structure);
 
   // Create the expected query and serialize it to a string.
@@ -2206,7 +2207,7 @@ TEST_F(AutofillCrowdsourcingEncoding, AllowBigForms) {
 
   FormStructure form_structure(form);
 
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> forms;
+  std::vector<raw_ptr<const FormStructure, VectorExperimental>> forms;
   forms.push_back(&form_structure);
   auto [encoded_query, encoded_signatures] =
       EncodeAutofillPageQueryRequest(forms);

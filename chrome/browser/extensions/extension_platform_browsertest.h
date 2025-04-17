@@ -8,7 +8,13 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#include "base/test/scoped_path_override.h"
+#include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/extensions/extension_browser_test_util.h"
+#include "chrome/browser/extensions/extension_browsertest_platform_delegate.h"
+#include "chrome/browser/extensions/install_verifier.h"
+#include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/test/base/platform_browser_test.h"
 #include "extensions/browser/browsertest_util.h"
 #include "extensions/browser/disable_reason.h"
@@ -16,9 +22,15 @@
 #include "extensions/browser/extension_protocols.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_registry_observer.h"
+#include "extensions/browser/sandboxed_unpacker.h"
 #include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_id.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/features/feature_channel.h"
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/scoped_test_mv2_enabler.h"
+#endif
 
 class Profile;
 
@@ -30,10 +42,17 @@ class WebContents;
 
 namespace extensions {
 class Extension;
+class ExtensionCache;
 class ExtensionHost;
-class ExtensionBrowserTestPlatformDelegate;
 class ExtensionRegistrar;
+class ExtensionSet;
+class ExtensionTestNotificationObserver;
 class ProcessManager;
+class ScopedIgnoreContentVerifierForTest;
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+class ExtensionService;
+#endif
 
 // A cross-platform base class for extensions-related browser tests.
 // `PlatformBrowserTest` inherits from different test suites based on the
@@ -53,9 +72,38 @@ class ExtensionPlatformBrowserTest : public PlatformBrowserTest,
   ~ExtensionPlatformBrowserTest() override;
 
  protected:
+  // Specifies the type of UI (if any) to show during installation and what
+  // user action to simulate.
+  enum class InstallUIType {
+    kNone,
+    kCancel,
+    kNormal,
+    kAutoConfirm,
+  };
+
   // The platform delegate is an implementation detail of the test harness
   // and should be able to access anything any general test would access.
   friend class ExtensionBrowserTestPlatformDelegate;
+
+  // Extensions used in tests are typically not from the web store and will have
+  // missing content verification hashes. The default implementation disables
+  // content verification; this should be overridden by derived tests which care
+  // about content verification.
+  virtual bool ShouldEnableContentVerification();
+
+  // Extensions used in tests are typically not from the web store and will fail
+  // install verification. The default implementation disables install
+  // verification; this should be overridden by derived tests which care
+  // about install verification.
+  virtual bool ShouldEnableInstallVerification();
+
+  // Whether MV2 extensions should be allowed. Defaults to true for testing
+  // (since many tests are parameterized to exercise both MV2 + MV3 logic).
+  virtual bool ShouldAllowMV2Extensions();
+
+  // Returns the extension in `extensions` with the given `path`, if one exists.
+  static const Extension* GetExtensionByPath(const ExtensionSet& extensions,
+                                             const base::FilePath& path);
 
   // content::BrowserTestBase:
   void SetUp() override;
@@ -82,6 +130,68 @@ class ExtensionPlatformBrowserTest : public PlatformBrowserTest,
   const Extension* LoadExtension(const base::FilePath& path,
                                  const LoadOptions& options);
 
+  // Loads unpacked extension from `path` with manifest `manifest_relative_path`
+  // and imitates that it is a component extension.
+  // `manifest_relative_path` is relative to `path`.
+  const Extension* LoadExtensionAsComponentWithManifest(
+      const base::FilePath& path,
+      const base::FilePath::CharType* manifest_relative_path);
+
+  // Loads unpacked extension from `path` and imitates that it is a component
+  // extension. Equivalent to
+  // `LoadExtensionAsComponentWithManifest(path, kManifestFilename)`.
+  const Extension* LoadExtensionAsComponent(const base::FilePath& path);
+
+  // `expected_change` indicates how many extensions should be installed (or
+  // disabled, if negative).
+  // 1 means you expect a new install, 0 means you expect an upgrade, -1 means
+  // you expect a failed upgrade.
+  const Extension* InstallExtension(const base::FilePath& path,
+                                    std::optional<int> expected_change);
+
+  // Same as above, but an install source other than
+  // mojom::ManifestLocation::kInternal can be specified.
+  const Extension* InstallExtension(const base::FilePath& path,
+                                    std::optional<int> expected_change,
+                                    mojom::ManifestLocation install_source);
+
+  // Installs an extension and grants it the permissions it requests.
+  // TODO(devlin): It seems like this is probably the desired outcome most of
+  // the time - otherwise the extension installs in a disabled state.
+  const Extension* InstallExtensionWithPermissionsGranted(
+      const base::FilePath& file_path,
+      std::optional<int> expected_change);
+
+  // Installs extension as if it came from the Chrome Webstore.
+  const Extension* InstallExtensionFromWebstore(
+      const base::FilePath& path,
+      std::optional<int> expected_change);
+
+  const Extension* InstallExtensionWithUIAutoConfirm(
+      const base::FilePath& path,
+      std::optional<int> expected_change);
+
+  const Extension* InstallExtensionWithSourceAndFlags(
+      const base::FilePath& path,
+      std::optional<int> expected_change,
+      mojom::ManifestLocation install_source,
+      Extension::InitFromValueFlags creation_flags);
+
+  // Begins install process but simulates a user cancel.
+  const Extension* StartInstallButCancel(const base::FilePath& path);
+
+  // Same as above but passes an id to CrxInstaller and does not allow a
+  // privilege increase.
+  const Extension* UpdateExtension(const extensions::ExtensionId& id,
+                                   const base::FilePath& path,
+                                   std::optional<int> expected_change);
+
+  // Same as UpdateExtension but waits for the extension to be idle first.
+  const Extension* UpdateExtensionWaitForIdle(
+      const extensions::ExtensionId& id,
+      const base::FilePath& path,
+      std::optional<int> expected_change);
+
   void DisableExtension(const ExtensionId& extension_id);
   void DisableExtension(const ExtensionId& extension_id,
                         const DisableReasonSet& disable_reasons);
@@ -94,6 +204,9 @@ class ExtensionPlatformBrowserTest : public PlatformBrowserTest,
 
   // Enables the extension with the given `extension_id`.
   void EnableExtension(const ExtensionId& extension_id);
+
+  // Reloads the extension with the given `extension_id`.
+  void ReloadExtension(const ExtensionId& extension_id);
 
   // Returns the WebContents of the currently active tab.
   // Note that when the test first launches, this will be the same as the
@@ -208,6 +321,20 @@ class ExtensionPlatformBrowserTest : public PlatformBrowserTest,
   // Tears down test protocol handler.
   void TearDownTestProtocolHandler();
 
+  // Wait for all extension views to load.
+  bool WaitForExtensionViewsToLoad();
+
+  // Wait for the extension to be idle.
+  bool WaitForExtensionIdle(const ExtensionId& extension_id);
+
+  // Wait for the extension to not be idle.
+  bool WaitForExtensionNotIdle(const ExtensionId& extension_id);
+
+  // These match the methods in ExtensionBrowserTestPlatformDelegate:
+  const Extension* LoadAndLaunchApp(const base::FilePath& path,
+                                    bool uses_guest_view = false);
+  bool WaitForPageActionVisibilityChangeTo(int count);
+
   // Lower case to match the style of InProcessBrowserTest.
   virtual Profile* profile();
 
@@ -221,6 +348,19 @@ class ExtensionPlatformBrowserTest : public PlatformBrowserTest,
     last_loaded_extension_id_ = std::move(id);
   }
 
+  ExtensionTestNotificationObserver* test_notification_observer() {
+    return test_notification_observer_.get();
+  }
+
+  ExtensionBrowserTestPlatformDelegate& platform_delegate() {
+    return platform_delegate_;
+  }
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  // Note: ExtensionService is not available in desktop android builds.
+  ExtensionService* extension_service();
+#endif
+
   // Set to "chrome/test/data/extensions". Derived classes may override.
   base::FilePath test_data_dir_;
 
@@ -230,7 +370,27 @@ class ExtensionPlatformBrowserTest : public PlatformBrowserTest,
   // maps to chrome/test/data/extensions/foo.
   ExtensionProtocolTestHandler test_protocol_handler_;
 
+#if BUILDFLAG(IS_CHROMEOS)
+  // True if the command line should be tweaked as if ChromeOS user is
+  // already logged in.
+  bool set_chromeos_user_ = true;
+#endif
+
  private:
+  // Common implementation for all our various install and update methods.
+  const Extension* InstallOrUpdateExtension(
+      const extensions::ExtensionId& id,
+      const base::FilePath& path,
+      InstallUIType ui_type,
+      std::optional<int> expected_change,
+      mojom::ManifestLocation install_source,
+      content::WebContents* active_web_contents,
+      Extension::InitFromValueFlags creation_flags,
+      bool wait_for_idle,
+      bool grant_permissions);
+
+  ExtensionBrowserTestPlatformDelegate platform_delegate_;
+
   // Temporary directory for testing.
   base::ScopedTempDir temp_dir_;
 
@@ -252,6 +412,42 @@ class ExtensionPlatformBrowserTest : public PlatformBrowserTest,
   // its own scoped channel override. As this stands, it means we don't really
   // have non-trunk coverage for most extension browser tests.
   ScopedCurrentChannel current_channel_;
+
+  // Disable external install UI.
+  FeatureSwitch::ScopedOverride override_prompt_for_external_extensions_;
+
+#if BUILDFLAG(IS_WIN)
+  // Use mock shortcut directories to ensure app shortcuts are cleaned up.
+  base::ScopedPathOverride user_desktop_override_;
+  base::ScopedPathOverride common_desktop_override_;
+  base::ScopedPathOverride user_quick_launch_override_;
+  base::ScopedPathOverride start_menu_override_;
+  base::ScopedPathOverride common_start_menu_override_;
+#endif
+
+  std::unique_ptr<ExtensionCache> test_extension_cache_;
+
+  // Conditionally disable install verification.
+  std::unique_ptr<ScopedInstallVerifierBypassForTest>
+      ignore_install_verification_;
+
+  // Conditionally disable content verification.
+  std::unique_ptr<ScopedIgnoreContentVerifierForTest>
+      ignore_content_verification_;
+
+  // Used to disable CRX publisher signature checking.
+  SandboxedUnpacker::ScopedVerifierFormatOverrideForTest
+      verifier_format_override_;
+
+  ExtensionUpdater::ScopedSkipScheduledCheckForTest skip_scheduled_check_;
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  // Allows MV2 extensions to be loaded.
+  std::optional<ScopedTestMV2Enabler> mv2_enabler_;
+#endif
+
+  std::unique_ptr<ExtensionTestNotificationObserver>
+      test_notification_observer_;
 
   // Listens to extension loaded notifications.
   base::ScopedObservation<ExtensionRegistry, ExtensionRegistryObserver>

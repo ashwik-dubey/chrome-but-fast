@@ -7,6 +7,7 @@ package org.chromium.chrome.browser.signin;
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.action.ViewActions.scrollTo;
+import static androidx.test.espresso.assertion.ViewAssertions.doesNotExist;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isCompletelyDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
@@ -26,12 +27,8 @@ import static org.chromium.ui.test.util.ViewUtils.onViewWaiting;
 
 import android.content.Intent;
 import android.content.res.Configuration;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
-import android.widget.ImageView;
 import android.widget.ProgressBar;
 
 import androidx.test.core.app.ApplicationProvider;
@@ -54,8 +51,8 @@ import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.BaseActivityTestRule;
 import org.chromium.base.test.util.ApplicationTestUtils;
 import org.chromium.base.test.util.CommandLineFlags;
-import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.DoNotBatch;
+import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.HistogramWatcher;
 import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.base.test.util.Restriction;
@@ -81,14 +78,14 @@ import org.chromium.content_public.browser.test.NativeLibraryTestUtils;
 import org.chromium.ui.test.util.BlankUiTestActivity;
 import org.chromium.ui.test.util.DeviceRestriction;
 import org.chromium.ui.test.util.GmsCoreVersionRestriction;
+import org.chromium.ui.test.util.RenderTestRule;
 import org.chromium.ui.test.util.ViewUtils;
 
 /** Integration tests for the re-FRE. */
 @RunWith(ChromeJUnit4ClassRunner.class)
 @DoNotBatch(reason = "This test relies on native initialization")
 @CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
-// The upgrade promo does not get displayed when Google Play Services are not available or on
-// Android Automotive.
+// TODO(crbug.com/404759692) Fix the tests for automotive.
 @Restriction({
     DeviceRestriction.RESTRICTION_TYPE_NON_AUTO,
     GmsCoreVersionRestriction.RESTRICTION_TYPE_VERSION_GE_20W02
@@ -96,6 +93,13 @@ import org.chromium.ui.test.util.ViewUtils;
 public class FullscreenSigninAndHistorySyncIntegrationTest {
     @Rule
     public final MockitoRule mMockitoRule = MockitoJUnit.rule().strictness(Strictness.STRICT_STUBS);
+
+    @Rule
+    public final RenderTestRule mRenderTestRule =
+            RenderTestRule.Builder.withPublicCorpus()
+                    .setRevision(0)
+                    .setBugComponent(RenderTestRule.Component.SERVICES_SIGN_IN)
+                    .build();
 
     @Rule(order = 0)
     public final SigninTestRule mSigninTestRule = new SigninTestRule();
@@ -579,7 +583,7 @@ public class FullscreenSigninAndHistorySyncIntegrationTest {
     @Test
     @LargeTest
     @Policies.Add({@Policies.Item(key = "RandomPolicy", string = "true")})
-    public void testFragmentWhenSigninIsDisabledByPolicy() {
+    public void testSigninDisabledByPolicy() {
         HistogramWatcher policyLoadedHistogram =
                 HistogramWatcher.newSingleRecordWatcher(
                         "Signin.Timestamps.Android.Fullscreen.PoliciesLoaded");
@@ -593,8 +597,51 @@ public class FullscreenSigninAndHistorySyncIntegrationTest {
     }
 
     @Test
+    @MediumTest
+    public void testSigninDisabledByConfig() {
+        mSigninTestRule.addAccount(TestAccounts.ACCOUNT1);
+        FullscreenSigninAndHistorySyncConfig config =
+                new FullscreenSigninAndHistorySyncConfig.Builder()
+                        .shouldDisableSignin(true)
+                        .build();
+
+        launchActivity(/* shouldReplaceProgressBars= */ true, config);
+
+        ViewUtils.waitForVisibleView(withText(R.string.continue_button));
+        onView(allOf(withId(R.id.title), withText(R.string.fre_welcome)))
+                .check(matches(isDisplayed()));
+        onView(allOf(withId(R.id.subtitle))).check(matches(not(isDisplayed())));
+        onView(withText(TestAccounts.ACCOUNT1.getEmail())).check(doesNotExist());
+    }
+
+    @Test
     @LargeTest
-    public void testFullscreenSigninCustomization() {
+    @Feature("RenderTest")
+    public void testSigninAndHistorySync() throws Exception {
+        FullscreenSigninAndHistorySyncConfig config =
+                new FullscreenSigninAndHistorySyncConfig.Builder().build();
+
+        launchActivity(/* shouldReplaceProgressBars= */ true, config);
+
+        onViewWaiting(withId(R.id.signin_fre_continue_button)).check(matches(isDisplayed()));
+
+        mRenderTestRule.render(
+                mActivityTestRule.getActivity().findViewById(android.R.id.content),
+                "fullscreen_signin_and_history_sync_sign_in");
+
+        // Go to the history sync screen and wait for the screen to show fully.
+        onView(withId(R.id.signin_fre_continue_button)).perform(click());
+        onViewWaiting(withId(R.id.button_primary)).check(matches(isDisplayed()));
+
+        mRenderTestRule.render(
+                mActivityTestRule.getActivity().findViewById(android.R.id.content),
+                "fullscreen_signin_and_history_sync_history_sync");
+    }
+
+    @Test
+    @MediumTest
+    @Feature("RenderTest")
+    public void testSigninAndHistorySyncCustomization() throws Exception {
         // Create a config which only uses non-default resource values to test customization.
         // For instance, the default sign-in strings are used for history sync and vice versa.
         FullscreenSigninAndHistorySyncConfig config =
@@ -608,35 +655,20 @@ public class FullscreenSigninAndHistorySyncIntegrationTest {
                         .build();
         launchActivity(/* shouldReplaceProgressBars= */ true, config);
 
-        // Verify that the strings are corrects and that the logo is shown.
-        onView(allOf(withId(R.id.title), withText(R.string.history_sync_title)))
-                .check(matches(isDisplayed()));
-        onView(allOf(withId(R.id.subtitle), withText(R.string.history_sync_subtitle)))
-                .check(matches(isDisplayed()));
-        onView(
-                        allOf(
-                                withId(R.id.signin_fre_dismiss_button),
-                                withText(R.string.signin_add_account_to_device)))
-                .check(matches(isDisplayed()));
-        onView(withId(R.id.fre_logo)).check(matches(isDisplayed()));
+        // Wait for the sign-in screen to show.
+        onViewWaiting(withId(R.id.signin_fre_continue_button));
 
-        CriteriaHelper.pollUiThread(
-                () -> {
-                    ImageView logoView =
-                            mActivityTestRule.getActivity().findViewById(R.id.fre_logo);
+        mRenderTestRule.render(
+                mActivityTestRule.getActivity().findViewById(android.R.id.content),
+                "fullscreen_signin_and_history_sync_sign_in_customized");
 
-                    Drawable expectedIcon =
-                            mActivityTestRule.getActivity().getDrawable(R.drawable.ic_globe_24dp);
-                    return getBitmap(expectedIcon).sameAs(getBitmap(logoView.getDrawable()));
-                });
-
+        // Go to the history sync screen and wait for the screen to show fully.
         onView(withId(R.id.signin_fre_continue_button)).perform(click());
+        onViewWaiting(withId(R.id.button_primary)).check(matches(isDisplayed()));
 
-        // Verify that the history opt-in dialog is shown with custom strings.
-        onView(allOf(withId(R.id.history_sync_title), withText(R.string.signin_fre_title)))
-                .check(matches(isDisplayed()));
-        onView(allOf(withId(R.id.history_sync_subtitle), withText(R.string.signin_fre_subtitle)))
-                .check(matches(isDisplayed()));
+        mRenderTestRule.render(
+                mActivityTestRule.getActivity().findViewById(android.R.id.content),
+                "fullscreen_signin_and_history_sync_history_sync_customized");
     }
 
     private void launchActivity() {
@@ -689,17 +721,5 @@ public class FullscreenSigninAndHistorySyncIntegrationTest {
 
             ViewUtils.waitForVisibleView(allOf(withId(R.id.fre_logo), isDisplayed()));
         }
-    }
-
-    private static Bitmap getBitmap(Drawable drawable) {
-        Bitmap bitmap =
-                Bitmap.createBitmap(
-                        drawable.getIntrinsicWidth(),
-                        drawable.getIntrinsicHeight(),
-                        Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap);
-        drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
-        drawable.draw(canvas);
-        return bitmap;
     }
 }

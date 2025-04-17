@@ -48,6 +48,10 @@ BASE_DECLARE_FEATURE(kClearUndecryptablePasswordsOnSync);
 // same iframe with 400-403 status code.
 BASE_DECLARE_FEATURE(kFailedLoginDetectionBasedOnResourceLoadingErrors);
 
+// Marks form submission as failed whenever a password field is cleared for the
+// sign-in forms.
+BASE_DECLARE_FEATURE(kFailedLoginDetectionBasedOnFormClearEvent);
+
 #if BUILDFLAG(IS_ANDROID)
 // Enables reading credentials from SharedPreferences.
 BASE_DECLARE_FEATURE(kFetchGaiaHashOnSignIn);
@@ -70,9 +74,6 @@ BASE_DECLARE_FEATURE(kIosCleanupHangingPasswordFormExtractionRequests);
 extern const base::FeatureParam<int>
     kIosPasswordFormExtractionRequestsTimeoutMs;
 
-// Enable saving username in UFF on iOS.
-BASE_DECLARE_FEATURE(kIosDetectUsernameInUff);
-
 // Enables improving detecting the password fields when retrieving password
 // suggestions for filling.
 BASE_DECLARE_FEATURE(kIOSImprovePasswordFieldDetectionForFilling);
@@ -86,9 +87,6 @@ BASE_DECLARE_FEATURE(kIOSPasswordBottomSheetV2);
 BASE_DECLARE_FEATURE(kIOSProactivePasswordGenerationBottomSheet);
 
 #endif
-
-// Enables saving enterprise password hashes to a local state preference.
-BASE_DECLARE_FEATURE(kLocalStateEnterprisePasswordHashes);
 
 // Enables running the clientside form classifier to parse password forms.
 BASE_DECLARE_FEATURE(kPasswordFormClientsideClassifier);
@@ -108,6 +106,10 @@ BASE_DECLARE_FEATURE(kPasswordManagerLogToTerminal);
 
 // Enables triggering password suggestions through the context menu.
 BASE_DECLARE_FEATURE(kPasswordManualFallbackAvailable);
+
+// Enables postponing detecting a successful submission and showing the
+// save/update UI by a fixed time.
+BASE_DECLARE_FEATURE(kPostponeOnLoginSuccessful);
 
 // Detects password reuse based on hashed password values.
 BASE_DECLARE_FEATURE(kReuseDetectionBasedOnPasswordHashes);
@@ -176,9 +178,6 @@ inline constexpr base::FeatureParam<int> kLoginDbDeprecationExportDelay = {
 // affiliation service. It fixes problem with incorrect password suggestions on
 // websites like slack.com.
 BASE_DECLARE_FEATURE(kUseExtensionListForPSLMatching);
-
-// Enables async implementation of OSCrypt inside LoginDatabase (Stage 1).
-BASE_DECLARE_FEATURE(kUseAsyncOsCryptInLoginDatabase);
 
 // Enables new encryption method of OSCrypt inside LoginDatabase (Stage 2).
 BASE_DECLARE_FEATURE(kUseNewEncryptionMethod);

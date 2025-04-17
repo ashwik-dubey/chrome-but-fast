@@ -652,7 +652,7 @@ void SetText16(TextBreakIterator* iter, base::span<const UChar> string) {
   iter->setText(&u_text, error_code);
 }
 
-TextBreakIterator* GetNonSharedCharacterBreakIterator() {
+TextBreakIterator* GetCharacterBreakIterator() {
   DEFINE_THREAD_SAFE_STATIC_LOCAL(
       ThreadSpecific<std::unique_ptr<TextBreakIterator>>, thread_specific, ());
 
@@ -785,8 +785,7 @@ void ReturnBreakIteratorToPool::operator()(void* ptr) const {
   LineBreakIteratorPool::SharedPool().Put(iterator);
 }
 
-NonSharedCharacterBreakIterator::NonSharedCharacterBreakIterator(
-    const StringView& string)
+CharacterBreakIterator::CharacterBreakIterator(const StringView& string)
     : is_8bit_(true),
       charaters8_(nullptr),
       offset_(0),
@@ -799,17 +798,18 @@ NonSharedCharacterBreakIterator::NonSharedCharacterBreakIterator(
   is_8bit_ = string.Is8Bit();
 
   if (is_8bit_) {
-    charaters8_ = string.Characters8();
+    base::span<const LChar> chars = string.Span8();
+    charaters8_ = chars.data();
     offset_ = 0;
-    length_ = string.length();
+    // static_cast<> is safe because `chars` came from a StringView.
+    length_ = static_cast<unsigned>(chars.size());
     return;
   }
 
   CreateIteratorForBuffer(string.Span16());
 }
 
-NonSharedCharacterBreakIterator::NonSharedCharacterBreakIterator(
-    base::span<const UChar> buffer)
+CharacterBreakIterator::CharacterBreakIterator(base::span<const UChar> buffer)
     : is_8bit_(false),
       charaters8_(nullptr),
       offset_(0),
@@ -818,19 +818,19 @@ NonSharedCharacterBreakIterator::NonSharedCharacterBreakIterator(
   CreateIteratorForBuffer(buffer);
 }
 
-void NonSharedCharacterBreakIterator::CreateIteratorForBuffer(
+void CharacterBreakIterator::CreateIteratorForBuffer(
     base::span<const UChar> buffer) {
-  iterator_ = GetNonSharedCharacterBreakIterator();
+  iterator_ = GetCharacterBreakIterator();
   SetText16(iterator_, buffer);
 }
 
-NonSharedCharacterBreakIterator::~NonSharedCharacterBreakIterator() {
+CharacterBreakIterator::~CharacterBreakIterator() {
   if (is_8bit_) {
     return;
   }
 }
 
-int NonSharedCharacterBreakIterator::Next() {
+int CharacterBreakIterator::Next() {
   if (!is_8bit_) {
     return iterator_->next();
   }
@@ -843,21 +843,21 @@ int NonSharedCharacterBreakIterator::Next() {
   return offset_;
 }
 
-int NonSharedCharacterBreakIterator::Current() {
+int CharacterBreakIterator::Current() {
   if (!is_8bit_) {
     return iterator_->current();
   }
   return offset_;
 }
 
-bool NonSharedCharacterBreakIterator::IsBreak(int offset) const {
+bool CharacterBreakIterator::IsBreak(int offset) const {
   if (!is_8bit_) {
     return iterator_->isBoundary(offset);
   }
   return !IsLFAfterCR(offset);
 }
 
-int NonSharedCharacterBreakIterator::Preceding(int offset) const {
+int CharacterBreakIterator::Preceding(int offset) const {
   if (!is_8bit_) {
     return iterator_->preceding(offset);
   }
@@ -870,7 +870,7 @@ int NonSharedCharacterBreakIterator::Preceding(int offset) const {
   return offset - 1;
 }
 
-int NonSharedCharacterBreakIterator::Following(int offset) const {
+int CharacterBreakIterator::Following(int offset) const {
   if (!is_8bit_) {
     return iterator_->following(offset);
   }

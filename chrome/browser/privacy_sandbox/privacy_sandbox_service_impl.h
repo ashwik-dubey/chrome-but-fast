@@ -16,11 +16,10 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "chrome/browser/first_party_sets/first_party_sets_policy_service.h"
-#include "chrome/browser/privacy_sandbox/privacy_sandbox_queue_manager.h"
+#include "chrome/browser/privacy_sandbox/notice/notice_storage.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/privacy_sandbox/canonical_topic.h"
-#include "components/privacy_sandbox/privacy_sandbox_notice_storage.h"
 #include "components/privacy_sandbox/privacy_sandbox_prefs.h"
 #include "components/privacy_sandbox/privacy_sandbox_settings.h"
 #include "components/privacy_sandbox/tracking_protection_settings.h"
@@ -29,6 +28,10 @@
 #include "components/user_education/common/product_messaging_controller.h"
 #include "content/public/browser/interest_group_manager.h"
 #include "net/base/schemeful_site.h"
+
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/privacy_sandbox/privacy_sandbox_queue_manager.h"
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 class Browser;
 class PrefService;
@@ -356,13 +359,10 @@ class PrivacySandboxServiceImpl : public PrivacySandboxService,
 #endif
 
   // Fake implementation for current and blocked topics.
-  static constexpr int kFakeTaxonomyVersion = 1;
-  std::set<privacy_sandbox::CanonicalTopic> fake_current_topics_ = {
-      {browsing_topics::Topic(1), kFakeTaxonomyVersion},
-      {browsing_topics::Topic(2), kFakeTaxonomyVersion}};
-  std::set<privacy_sandbox::CanonicalTopic> fake_blocked_topics_ = {
-      {browsing_topics::Topic(3), kFakeTaxonomyVersion},
-      {browsing_topics::Topic(4), kFakeTaxonomyVersion}};
+  // TODO(crbug.com/409048902): Moved initialization to constructor to prevent
+  // potential initialization order issues.
+  std::set<privacy_sandbox::CanonicalTopic> fake_current_topics_;
+  std::set<privacy_sandbox::CanonicalTopic> fake_blocked_topics_;
 
   // Record user action metrics based on the |action|.
   void RecordPromptActionMetrics(PrivacySandboxService::PromptAction action);

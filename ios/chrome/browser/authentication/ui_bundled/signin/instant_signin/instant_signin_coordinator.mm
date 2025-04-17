@@ -40,13 +40,15 @@
   // Coordinator for the user to select an account.
   IdentityChooserCoordinator* _identityChooserCoordinator;
   // Coordinator to add an account.
-  SigninCoordinator* _addAccountSigninCoordinator;
+  SigninCoordinator<InterruptibleChromeCoordinator>*
+      _addAccountSigninCoordinator;
   // Overlay to block the current window while the sign-in is in progress.
   ActivityOverlayCoordinator* _activityOverlayCoordinator;
   // Action recorded if sign-in succeeded.
   signin_metrics::AccountConsistencyPromoAction _actionToRecordOnSuccess;
   // The signin logger.
   UserSigninLogger* _signinLogger;
+  ChangeProfileContinuationProvider _continuationProvider;
 }
 
 #pragma mark - Public
@@ -55,14 +57,20 @@
     initWithBaseViewController:(UIViewController*)viewController
                        browser:(Browser*)browser
                       identity:(id<SystemIdentity>)identity
+                  contextStyle:(SigninContextStyle)contextStyle
                    accessPoint:(signin_metrics::AccessPoint)accessPoint
-                   promoAction:(signin_metrics::PromoAction)promoAction {
+                   promoAction:(signin_metrics::PromoAction)promoAction
+          continuationProvider:
+              (const ChangeProfileContinuationProvider&)continuationProvider {
   self = [super initWithBaseViewController:viewController
                                    browser:browser
+                              contextStyle:contextStyle
                                accessPoint:accessPoint];
   if (self) {
+    CHECK(continuationProvider);
     _identity = identity;
     _promoAction = promoAction;
+    _continuationProvider = continuationProvider;
   }
   return self;
 }
@@ -81,7 +89,8 @@
                                                     promoAction:_promoAction];
   [_signinLogger logSigninStarted];
   _mediator =
-      [[InstantSigninMediator alloc] initWithAccessPoint:self.accessPoint];
+      [[InstantSigninMediator alloc] initWithAccessPoint:self.accessPoint
+                                    continuationProvider:_continuationProvider];
   _mediator.delegate = self;
 
   if (_identity) {
@@ -263,7 +272,9 @@
   _addAccountSigninCoordinator = [SigninCoordinator
       addAccountCoordinatorWithBaseViewController:self.baseViewController
                                           browser:self.browser
-                                      accessPoint:self.accessPoint];
+                                     contextStyle:self.contextStyle
+                                      accessPoint:self.accessPoint
+                             continuationProvider:_continuationProvider];
   __weak __typeof(self) weakSelf = self;
   _addAccountSigninCoordinator.signinCompletion = ^(
       SigninCoordinatorResult result, id<SystemIdentity> resultIdentity) {

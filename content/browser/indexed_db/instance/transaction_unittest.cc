@@ -162,7 +162,9 @@ class TransactionTest : public testing::Test {
         BucketContextHandle(*bucket_context_),
         std::make_unique<FakeTransaction>(
             commit_phase_two_error_status, mode,
-            bucket_context_->backing_store()->AsWeakPtr()));
+            reinterpret_cast<level_db::BackingStore*>(
+                bucket_context_->backing_store())
+                ->AsWeakPtr()));
 
     Transaction* transaction_reference = transaction.get();
     connection->transactions_[id] = std::move(transaction);
@@ -354,7 +356,7 @@ TEST_F(TransactionTest, TimeoutWithPriorities) {
     EXPECT_EQ(test_case.can_timeout ? 1 : 0, transaction->timeout_strikes_);
 
     // Clean up for the next iteration.
-    db_->ForceCloseAndRunTasks();
+    db_->ForceCloseAndRunTasks("The database is force-closed for testing.");
   }
 }
 

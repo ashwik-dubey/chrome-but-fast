@@ -808,6 +808,16 @@ void ReadAnythingAppModel::ProcessNonGeneratedEvents(
       case ax::mojom::Event::kLocationChanged:
         delay_screen2x_training_data_collection_ = true;
         break;
+
+      case ax::mojom::Event::kBlur:
+        // Closing ads sometimes sends this event but we also get this when
+        // keyboard focus changes. Only try to redistill if we have no content
+        // right now.
+        if (features::IsReadAnythingReadAloudEnabled() &&
+            content_node_ids_.size() == 0) {
+          requires_distillation_ = true;
+        }
+        break;
       // Audit these events e.g. to require distillation.
       case ax::mojom::Event::kActiveDescendantChanged:
       case ax::mojom::Event::kCheckedStateChanged:
@@ -822,7 +832,6 @@ void ReadAnythingAppModel::ProcessNonGeneratedEvents(
       case ax::mojom::Event::kNone:
       case ax::mojom::Event::kAlert:
       case ax::mojom::Event::kAutocorrectionOccured:
-      case ax::mojom::Event::kBlur:
       case ax::mojom::Event::kClicked:
       case ax::mojom::Event::kControlsChanged:
       case ax::mojom::Event::kEndOfTest:
@@ -953,9 +962,14 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
         }
         break;
       // After the user finishes typing something we wait for a timer and redraw
-      // to capture the input.
+      // to capture the input. For some reason, scrolling pdfs sends editable
+      // text changed events, which is not what we want, so only redraw if it's
+      // not a pdf.
+      // TODO(crbug.com//40927698): Determine why these events are generated
+      // for PDF scrolling, and if there's a need to differentiate actual pdf
+      // edits.
       case ui::AXEventGenerator::Event::EDITABLE_TEXT_CHANGED:
-        if (features::IsReadAnythingReadAloudEnabled()) {
+        if (features::IsReadAnythingReadAloudEnabled() && !is_pdf_) {
           reset_draw_timer_ = true;
           break;
         }

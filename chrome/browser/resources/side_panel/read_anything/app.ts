@@ -599,6 +599,15 @@ export class AppElement extends AppElementBase {
       htmlTag = 'div';
     }
 
+    // details tags hide content beneath them if closed. If opened, there is
+    // content underneath we should show, but surrounding it with a generic
+    // details tag causes it to be hidden in reading mode. So use a div instead.
+    // In the cases that the details are closed, then nothing will be returned
+    // beneath the details tag so nothing is rendered on reading mode.
+    if (htmlTag === 'details') {
+      htmlTag = 'div';
+    }
+
     // Images will be written to a canvas.
     if (htmlTag === 'img') {
       htmlTag = 'canvas';
@@ -759,9 +768,17 @@ export class AppElement extends AppElementBase {
 
     this.willDrawAgainSoon_ = chrome.readingMode.requiresDistillation;
     const node = this.buildSubtree_(rootId);
-    // If there is not text or images in the node, do not prodeed. The empty
+    // If there is no text or images in the tree, do not proceed. The empty
     // state container will show instead.
     if (!node.textContent && this.imageNodeIdsToFetch_.size === 0) {
+      // Sometimes the controller thinks there will be content and redraws
+      // without showing the empty page, but we end up not actually having any
+      // content and also not showing the empty page sometimes. In this case,
+      // send that info back to the controller.
+      if (this.hasContent_) {
+        this.hasContent_ = false;
+        chrome.readingMode.onNoTextContent();
+      }
       return;
     }
 
@@ -1694,19 +1711,26 @@ export class AppElement extends AppElementBase {
       return false;
     }
 
-    const {anchorNodeId, anchorOffset, focusNodeId, focusOffset} =
-        this.getSelectedIds();
+    const anchorNodeId = chrome.readingMode.startNodeId;
+    const anchorOffset = chrome.readingMode.startOffset;
+    const focusNodeId = chrome.readingMode.endNodeId;
+    const focusOffset = chrome.readingMode.endOffset;
+
     // If only one of the ids is present, use that one.
     let startingNodeId: number|undefined =
         anchorNodeId ? anchorNodeId : focusNodeId;
     let startingOffset = anchorNodeId ? anchorOffset : focusOffset;
     // If both are present, start with the node that is sooner in the page.
     if (anchorNodeId && focusNodeId) {
-      const pos =
-          selection.anchorNode.compareDocumentPosition(selection.focusNode);
-      const focusIsFirst = pos === Node.DOCUMENT_POSITION_PRECEDING;
-      startingNodeId = focusIsFirst ? focusNodeId : anchorNodeId;
-      startingOffset = focusIsFirst ? focusOffset : anchorOffset;
+      if (anchorNodeId === focusNodeId) {
+        startingOffset = Math.min(anchorOffset, focusOffset);
+      } else {
+        const pos =
+            selection.anchorNode.compareDocumentPosition(selection.focusNode);
+        const focusIsFirst = pos === Node.DOCUMENT_POSITION_PRECEDING;
+        startingNodeId = focusIsFirst ? focusNodeId : anchorNodeId;
+        startingOffset = focusIsFirst ? focusOffset : anchorOffset;
+      }
     }
 
     if (!startingNodeId) {

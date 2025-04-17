@@ -4,6 +4,8 @@
 
 package org.chromium.chrome.browser.compositor.overlays.strip;
 
+import android.content.Context;
+import android.text.TextUtils;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
 
@@ -15,6 +17,7 @@ import org.chromium.base.Token;
 import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
+import org.chromium.chrome.browser.tabmodel.TabGroupTitleUtils;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiThemeUtil;
 import org.chromium.components.tab_group_sync.LocalTabGroupId;
@@ -142,6 +145,44 @@ public class StripLayoutUtils {
     }
 
     /**
+     * Returns the group title text for the given {@link Tab}'s group. Falls back to the default
+     * title if needed.
+     *
+     * @param context The Android {@link Context}.
+     * @param modelFilter The {@link TabGroupModelFilter} that holds the given tab.
+     * @param tab A grouped tab.
+     */
+    public static String getGroupTitleText(
+            Context context, TabGroupModelFilter modelFilter, Tab tab) {
+        assert tab != null && tab.getTabGroupId() != null;
+        return getDefaultGroupTitleTextIfEmpty(
+                context,
+                modelFilter,
+                tab.getTabGroupId(),
+                modelFilter.getTabGroupTitle(tab.getRootId()));
+    }
+
+    /**
+     * Returns the provided title text if it isn't empty. Otherwise, returns the default title.
+     *
+     * @param context The Android {@link Context}.
+     * @param modelFilter The {@link TabGroupModelFilter} that holds the given group.
+     * @param tabGroupId The tab group ID of the relevant tab group.
+     * @param titleText The tab group's title text, if any. {@code null} otherwise.
+     */
+    public static String getDefaultGroupTitleTextIfEmpty(
+            Context context,
+            TabGroupModelFilter modelFilter,
+            Token tabGroupId,
+            @Nullable String titleText) {
+        // TODO(crbug.com/407545128): Unify with similar checks elsewhere.
+        if (!TextUtils.isEmpty(titleText)) return titleText;
+
+        int numTabs = modelFilter.getTabCountForGroup(tabGroupId);
+        return TabGroupTitleUtils.getDefaultTitle(context, numTabs);
+    }
+
+    /**
      * @param groupTitle The tab group title indicator {@link StripLayoutGroupTitle}.
      * @param numTabsInGroup Number of tabs in the tab group.
      * @param effectiveTabWidth The width of a tab, accounting for overlap.
@@ -213,7 +254,7 @@ public class StripLayoutUtils {
      * @param id The ID of the {@link StripLayoutTab} we're searching for.
      * @return The {@link StripLayoutTab}. {@code null} if not found.
      */
-    static @Nullable StripLayoutTab findTabById(StripLayoutTab[] stripTabs, int id) {
+    public static @Nullable StripLayoutTab findTabById(StripLayoutTab[] stripTabs, int id) {
         if (stripTabs == null) return null;
         for (int i = 0; i < stripTabs.length; i++) {
             if (stripTabs[i].getTabId() == id) return stripTabs[i];
@@ -235,15 +276,15 @@ public class StripLayoutUtils {
             if (view instanceof StripLayoutTab tab) {
                 leftEdge = tab.getTouchTargetLeft();
                 rightEdge = tab.getTouchTargetRight();
-                if (LocalizationUtils.isLayoutRtl()) {
-                    leftEdge -= tab.getTrailingMargin();
-                } else {
-                    rightEdge += tab.getTrailingMargin();
-                }
             } else {
                 if (!includeGroupTitles) continue;
                 leftEdge = view.getDrawX();
                 rightEdge = leftEdge + view.getWidth();
+            }
+            if (LocalizationUtils.isLayoutRtl()) {
+                leftEdge -= view.getTrailingMargin();
+            } else {
+                rightEdge += view.getTrailingMargin();
             }
 
             if (view.isVisible() && leftEdge <= x && x <= rightEdge) {

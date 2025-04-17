@@ -10,6 +10,7 @@
 #include "base/memory/memory_pressure_monitor.h"
 #include "chrome/browser/browser_features.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/contextual_cueing/contextual_cueing_service.h"
 #include "chrome/browser/glic/glic_keyed_service.h"
 #include "chrome/browser/glic/glic_keyed_service_factory.h"
 #include "chrome/browser/glic/test_support/glic_test_util.h"
@@ -35,14 +36,17 @@ namespace {
 
 class MockGlicKeyedService : public GlicKeyedService {
  public:
-  MockGlicKeyedService(content::BrowserContext* browser_context,
-                       signin::IdentityManager* identity_manager,
-                       ProfileManager* profile_manager,
-                       GlicProfileManager* glic_profile_manager)
+  MockGlicKeyedService(
+      content::BrowserContext* browser_context,
+      signin::IdentityManager* identity_manager,
+      ProfileManager* profile_manager,
+      GlicProfileManager* glic_profile_manager,
+      contextual_cueing::ContextualCueingService* contextual_cueing_service)
       : GlicKeyedService(Profile::FromBrowserContext(browser_context),
                          identity_manager,
                          profile_manager,
-                         glic_profile_manager) {}
+                         glic_profile_manager,
+                         contextual_cueing_service) {}
   MOCK_METHOD(void, ClosePanel, (), (override));
 
   bool IsWindowDetached() const override { return detached_; }
@@ -60,7 +64,8 @@ class GlicProfileManagerBrowserTest : public InProcessBrowserTest {
  public:
   GlicProfileManagerBrowserTest() {
     scoped_feature_list_.InitWithFeatures(
-        /*enabled_features=*/{features::kGlic, features::kTabstripComboButton},
+        /*enabled_features=*/{features::kGlic, features::kTabstripComboButton,
+                              features::kGlicRollout},
         /*disabled_features=*/{features::kDestroyProfileOnBrowserClose});
 
     create_services_subscription_ =
@@ -101,7 +106,8 @@ class GlicProfileManagerBrowserTest : public InProcessBrowserTest {
         Profile::FromBrowserContext(context));
     return std::make_unique<MockGlicKeyedService>(
         context, identitity_manager, g_browser_process->profile_manager(),
-        GlicProfileManager::GetInstance());
+        GlicProfileManager::GetInstance(),
+        /*contextual_cueing_service=*/nullptr);
   }
 
   base::test::ScopedFeatureList scoped_feature_list_;
@@ -197,12 +203,12 @@ class GlicProfileManagerPreloadingTest
     if (IsPreloadingEnabled()) {
       scoped_feature_list_.InitWithFeatures(
           /*enabled_features=*/{features::kGlic, features::kTabstripComboButton,
-                                features::kGlicWarming},
+                                features::kGlicRollout, features::kGlicWarming},
           /*disabled_features=*/{});
     } else {
       scoped_feature_list_.InitWithFeatures(
-          /*enabled_features=*/{features::kGlic,
-                                features::kTabstripComboButton},
+          /*enabled_features=*/{features::kGlic, features::kTabstripComboButton,
+                                features::kGlicRollout},
           /*disabled_features=*/{features::kGlicWarming});
     }
     GlicProfileManager::ForceMemoryPressureForTesting(&memory_pressure_);

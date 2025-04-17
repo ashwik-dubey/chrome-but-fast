@@ -543,9 +543,8 @@ BASE_FEATURE(kMemoryPressureBasedSourceBufferGC,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Forces SuggestProviderState() to only suggest deferring when range requests
-// aren't supported. Will cause us to buffer up to preload then release the
-// loader -- creating a new one to refill beyond the preload amount. Increases
-// the number of network connections used during loading, but may prevent hangs.
+// aren't supported and the underlying provider considers itself stale. The
+// stale state is set if the provider has been in a deferred state for > 1 sec.
 BASE_FEATURE(kMultiBufferNeverDefer,
              "MultiBufferNeverDefer",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -857,12 +856,6 @@ BASE_FEATURE(kExternalClearKeyForTesting,
 // Specifies the path to the MediaFoundation Clear Key CDM for testing.
 const base::FeatureParam<std::string> kMediaFoundationClearKeyCdmPathForTesting{
     &kExternalClearKeyForTesting, "media_foundation_cdm_path", ""};
-
-// Enables the use of a faulty GPU for MediaFoundation. This is used for testing
-// purposes only.
-BASE_FEATURE(kEnableFaultyGPUForMediaFoundation,
-             "EnableFaultyGPUForMediaFoundation",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_WIN)
 
 // Enables the On-Device Web Speech feature on supported devices.
@@ -1149,9 +1142,6 @@ BASE_FEATURE(kBuiltInHlsMP4,
              "BuiltInHlsMP4",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kMediaPlayerHlsStatistics,
-             "MediaPlayerHlsStatistics",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
 
 #if BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
@@ -1718,6 +1708,11 @@ BASE_FEATURE(kRenderMutedAudio,
 BASE_FEATURE(kSupportMappableSharedImageOverMojo,
              "SupportMappableSharedImageOverMojo",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Controls headless Live Caption experiment, which is likely unstable.
+BASE_FEATURE(kHeadlessLiveCaption,
+             "HeadlessLiveCaption",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 bool IsChromeWideEchoCancellationEnabled() {
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)

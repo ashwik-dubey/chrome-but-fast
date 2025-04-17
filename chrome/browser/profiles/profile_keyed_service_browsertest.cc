@@ -774,12 +774,16 @@ IN_PROC_BROWSER_TEST_F(ProfileKeyedServiceGuestBrowserTest,
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
     "ServerCertificateDatabaseService",
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+    "ServiceWorkerTaskQueue",
     "SessionDataService",
     "SessionProtoDBFactory",
     "SessionsAPI",
     "sessions::TabRestoreService",
     "SettingsOverridesAPI",
     "SettingsPrivateEventRouter",
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+    "SharedModuleService",
+#endif
     "ShoppingService",
     "SidePanelService",
     "SiteDataCacheFacadeFactory",

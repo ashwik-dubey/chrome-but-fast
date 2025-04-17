@@ -6,6 +6,7 @@
 
 #include "apps/launcher.h"
 #include "base/auto_reset.h"
+#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -68,7 +69,7 @@ ShellExtensionLoader::ShellExtensionLoader(
       extension_registrar_(ExtensionRegistrar::Get(browser_context)),
       keep_alive_requester_(browser_context) {
   extension_registrar_->Init(
-      this, /*extensions_enabled=*/true,
+      this, /*extensions_enabled=*/true, base::CommandLine::ForCurrentProcess(),
       browser_context_->GetPath().AppendASCII(kInstallDirectoryName),
       browser_context_->GetPath().AppendASCII(kUnpackedInstallDirectoryName));
 }
@@ -155,9 +156,6 @@ void ShellExtensionLoader::PostUninstallExtension(
     scoped_refptr<const Extension> extension,
     base::OnceClosure done_callback) {}
 
-void ShellExtensionLoader::PostNotifyUninstallExtension(
-    scoped_refptr<const Extension> extension) {}
-
 void ShellExtensionLoader::LoadExtensionForReload(
     const ExtensionId& extension_id,
     const base::FilePath& path,
@@ -175,8 +173,6 @@ void ShellExtensionLoader::ShowExtensionDisabledError(
     const Extension* extension,
     bool is_remote_install) {}
 
-void ShellExtensionLoader::FinishDelayedInstallationsIfAny() {}
-
 bool ShellExtensionLoader::CanEnableExtension(const Extension* extension) {
   return true;
 }
@@ -191,6 +187,14 @@ void ShellExtensionLoader::GrantActivePermissions(const Extension* extension) {
 }
 
 void ShellExtensionLoader::UpdateExternalExtensionAlert() {
+  NOTIMPLEMENTED();
+}
+
+void ShellExtensionLoader::OnExtensionInstalled(
+    const Extension* extension,
+    const syncer::StringOrdinal& page_ordinal,
+    int install_flags,
+    base::Value::Dict ruleset_install_prefs) {
   NOTIMPLEMENTED();
 }
 

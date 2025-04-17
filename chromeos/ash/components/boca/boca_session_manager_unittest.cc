@@ -204,7 +204,7 @@ class BocaSessionManagerTestBase : public testing::Test {
 
   const base::TimeDelta kDefaultInSessionPollingInterval = base::Seconds(60);
   const base::TimeDelta kDefaultIndefinitePollingInterval = base::Seconds(60);
-  const base::TimeDelta kDefaultStudentHeartbeatInterval = base::Seconds(60);
+  const base::TimeDelta kDefaultStudentHeartbeatInterval = base::Seconds(30);
 
  protected:
   void ToggleOnline() {
@@ -314,7 +314,7 @@ class BocaSessionManagerTest : public BocaSessionManagerTestBase {
     // Set initial network config.
     ToggleOffline();
     // Trigger network update activity.
-    ToggleOnline();
+    ToggleIntoManagedNetwork();
 
     boca_session_manager_->ToggleAppStatus(/*is_app_opened=*/true);
   }
@@ -1456,7 +1456,7 @@ TEST_F(BocaSessionManagerTest, StudentHeartbeatNotCalledWithProducer) {
   boca_session_manager()->UpdateCurrentSession(
       std::make_unique<::boca::Session>(session), false);
 
-  task_environment()->FastForwardBy(kDefaultStudentHeartbeatInterval);
+  task_environment()->FastForwardBy(kDefaultInSessionPollingInterval);
 }
 
 TEST_F(BocaSessionManagerTest, InitializerSetSuccess) {
@@ -1758,6 +1758,108 @@ TEST_F(BocaSessionManagerStudentHeartbeatTest,
 
   task_environment()->FastForwardBy(kDefaultStudentHeartbeatInterval * 1 +
                                     base::Seconds(1));
+}
+
+TEST_F(BocaSessionManagerStudentHeartbeatTest,
+       StudentHeartbeatCallFailedWithRetryBackoff) {
+  ::boca::Session session_1;
+  session_1.set_session_id(kInitialSessionId);
+  session_1.set_session_state(::boca::Session::ACTIVE);
+  session_1.mutable_duration()->set_seconds(kInitialSessionDurationInSecs);
+  session_1.mutable_start_time()->set_seconds(
+      base::Time::Now().InMillisecondsSinceUnixEpoch() / 1000);
+
+  EXPECT_CALL(*session_client_impl(), StudentHeartbeat(_))
+      .Times(3)
+      .WillRepeatedly(testing::InvokeWithoutArgs([&]() {
+        boca_session_manager()->OnStudentHeartbeat(
+            base::unexpected<google_apis::ApiErrorCode>(
+                google_apis::ApiErrorCode::HTTP_INTERNAL_SERVER_ERROR));
+      }));
+
+  boca_session_manager()->UpdateCurrentSession(
+      std::make_unique<::boca::Session>(session_1), /*dispatch_event=*/true);
+
+  task_environment()->FastForwardBy(
+      kDefaultStudentHeartbeatInterval +
+      base::Seconds(30) +        // Initial backoff delay.
+      base::Seconds(30 * 1.2));  // Second backoff delay.
+}
+
+TEST_F(BocaSessionManagerStudentHeartbeatTest,
+       StudentHeartbeatCallFailedWithRetryBackoffThenSucceeded) {
+  ::boca::Session session_1;
+  session_1.set_session_id(kInitialSessionId);
+  session_1.set_session_state(::boca::Session::ACTIVE);
+  session_1.mutable_duration()->set_seconds(kInitialSessionDurationInSecs);
+  session_1.mutable_start_time()->set_seconds(
+      base::Time::Now().InMillisecondsSinceUnixEpoch() / 1000);
+
+  EXPECT_CALL(*session_client_impl(), StudentHeartbeat(_))
+      .Times(4)
+      .WillOnce(testing::InvokeWithoutArgs([&]() {
+        boca_session_manager()->OnStudentHeartbeat(
+            base::unexpected<google_apis::ApiErrorCode>(
+                google_apis::ApiErrorCode::HTTP_INTERNAL_SERVER_ERROR));
+      }))
+      .WillOnce(testing::InvokeWithoutArgs([&]() {
+        boca_session_manager()->OnStudentHeartbeat(
+            base::unexpected<google_apis::ApiErrorCode>(
+                google_apis::ApiErrorCode::HTTP_INTERNAL_SERVER_ERROR));
+      }))
+      .WillOnce(testing::InvokeWithoutArgs([&]() {
+        boca_session_manager()->OnStudentHeartbeat(base::ok<bool>(true));
+      }))
+      .WillOnce(testing::InvokeWithoutArgs([&]() {
+        boca_session_manager()->OnStudentHeartbeat(base::ok<bool>(true));
+      }));
+
+  boca_session_manager()->UpdateCurrentSession(
+      std::make_unique<::boca::Session>(session_1), /*dispatch_event=*/true);
+
+  task_environment()->FastForwardBy(
+      kDefaultStudentHeartbeatInterval +
+      base::Seconds(30) +        // Initial backoff delay.
+      base::Seconds(30 * 1.2) +  // Second backoff delay.
+      base::Seconds(30));        // Default heartbeat interval.
+}
+
+TEST_F(BocaSessionManagerStudentHeartbeatTest,
+       StudentHeartbeatCallFailedWithRetryBackoffWithNewSession) {
+  ::boca::Session session_1;
+  session_1.set_session_id(kInitialSessionId);
+  session_1.set_session_state(::boca::Session::ACTIVE);
+  session_1.mutable_duration()->set_seconds(kInitialSessionDurationInSecs);
+  session_1.mutable_start_time()->set_seconds(
+      base::Time::Now().InMillisecondsSinceUnixEpoch() / 1000);
+
+  EXPECT_CALL(*session_client_impl(), StudentHeartbeat(_))
+      .Times(3)
+      .WillRepeatedly(testing::InvokeWithoutArgs([&]() {
+        boca_session_manager()->OnStudentHeartbeat(
+            base::unexpected<google_apis::ApiErrorCode>(
+                google_apis::ApiErrorCode::HTTP_INTERNAL_SERVER_ERROR));
+      }));
+
+  boca_session_manager()->UpdateCurrentSession(
+      std::make_unique<::boca::Session>(session_1), /*dispatch_event=*/true);
+
+  task_environment()->FastForwardBy(
+      kDefaultStudentHeartbeatInterval +
+      base::Seconds(30));  // Second backoff delay.
+
+  // Start another session
+  ::boca::Session session_2;
+  session_2.set_session_state(::boca::Session::ACTIVE);
+  session_2.set_session_id(kInitialSessionId);
+  session_2.mutable_duration()->set_seconds(kInitialSessionDurationInSecs);
+  session_2.mutable_start_time()->set_seconds(
+      base::Time::Now().InMillisecondsSinceUnixEpoch() / 1000);
+
+  boca_session_manager()->UpdateCurrentSession(
+      std::make_unique<::boca::Session>(session_2), /*dispatch_event=*/true);
+
+  task_environment()->FastForwardBy(base::Seconds(30 * 1.2));
 }
 
 class BocaSessionManagerStudentHeartbeatCustomPollingTest

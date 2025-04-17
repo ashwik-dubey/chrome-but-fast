@@ -90,7 +90,7 @@ using DismissViewCallback = SystemIdentityManager::DismissViewCallback;
   SyncEncryptionPassphraseTableViewController*
       _syncEncryptionPassphraseTableViewController;
   // Account menu coordinator.
-  SigninCoordinator* _accountMenuCoordinator;
+  SigninCoordinator<InterruptibleChromeCoordinator>* _accountMenuCoordinator;
 }
 
 // View controller.
@@ -341,7 +341,7 @@ using DismissViewCallback = SystemIdentityManager::DismissViewCallback;
 
 - (void)manageAccountsCoordinatorWantsToBeStopped:
     (ManageAccountsCoordinator*)coordinator {
-  CHECK_EQ(coordinator, _manageAccountsCoordinator, base::NotFatalUntil::M133);
+  CHECK_EQ(coordinator, _manageAccountsCoordinator);
   [self stopManageAccountsCoordinator];
 }
 
@@ -417,7 +417,7 @@ using DismissViewCallback = SystemIdentityManager::DismissViewCallback;
                             view:self.viewController.view
         forceSnackbarOverToolbar:NO
                       withSource:metricSignOut
-                      completion:^(BOOL success) {
+                      completion:^(BOOL success, SceneState* scene_state) {
                         [weakSelf handleSignOutCompleted:success];
                       }];
   self.signoutActionSheetCoordinator.delegate = self;
@@ -490,11 +490,12 @@ using DismissViewCallback = SystemIdentityManager::DismissViewCallback;
 }
 
 - (void)openAccountMenu {
-  // TODO(crbug.com/336719357): Update to use ApplicationCommands.
   _accountMenuCoordinator = [SigninCoordinator
       accountMenuCoordinatorWithBaseViewController:self.viewController
                                            browser:self.browser
-                                        anchorView:_viewController.view];
+                                      contextStyle:SigninContextStyle::kDefault
+                                        anchorView:_viewController.view
+                                           fromWeb:NO];
 
   __weak __typeof(self) weakself = self;
   _accountMenuCoordinator.signinCompletion =

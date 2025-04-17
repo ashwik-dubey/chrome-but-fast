@@ -486,7 +486,7 @@ void DataTypeManagerImpl::Restart() {
   // restarts.
   if (reason == CONFIGURE_REASON_RECONFIGURATION ||
       reason == CONFIGURE_REASON_NEW_CLIENT ||
-      reason == CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE) {
+      reason == CONFIGURE_REASON_EXISTING_CLIENT_RESTART) {
     for (DataType type : preferred_types_) {
       UMA_HISTOGRAM_ENUMERATION("Sync.ConfigureDataTypes",
                                 DataTypeHistogramValue(type));
@@ -913,8 +913,9 @@ void DataTypeManagerImpl::GetTypesWithUnsyncedData(
   for (DataType type : requested_types) {
     auto it = controllers_.find(type);
     if (it == controllers_.end()) {
-      // This should be rare, but can happen e.g. if a requested type is
-      // disabled via feature flag.
+      // This can happen if the requested data type is not supported on the
+      // current platform, or in some rare cases, for example, if the requested
+      // data type is disabled via feature flag.
       helper->OnReceivedResultForType(type, /*has_unsynced_data=*/false);
       continue;
     }

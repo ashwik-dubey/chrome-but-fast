@@ -23,6 +23,7 @@
 #include "base/scoped_multi_source_observation.h"
 #include "base/scoped_observation.h"
 #include "build/build_config.h"
+#include "chrome/browser/ui/tabs/split_tab_collection.h"
 #include "chrome/browser/ui/tabs/tab_group_controller.h"
 #include "chrome/browser/ui/tabs/tab_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_scrubbing_metrics.h"
@@ -52,12 +53,13 @@ class WebContents;
 
 namespace split_tabs {
 class SplitTabData;
+class SplitTabVisualData;
+enum class SplitTabLayout;
 }
 
 namespace tabs {
 class TabStripCollection;
 class TabGroupTabCollection;
-enum class SplitTabLayout;
 }
 
 class TabGroupModelFactory {
@@ -283,6 +285,11 @@ class TabStripModel : public TabGroupController {
   // Closes the WebContents at the specified index. This causes the
   // WebContents to be destroyed, but it may not happen immediately.
   // |close_types| is a bitmask of CloseTypes.
+  // TODO(crbug.com/392950857): Currently many call sites of CloseWebContentsAt
+  // convert a tab/webcontents to an index, which gets converted back to a
+  // webcontents within this function. Provide a CloseWebContents function that
+  // directly closes a web contents so that we don't have to convert back and
+  // forth.
   void CloseWebContentsAt(int index, uint32_t close_types);
 
   // Discards the WebContents at |index| and replaces it with |new_contents|.
@@ -443,9 +450,6 @@ class TabStripModel : public TabGroupController {
 
   bool IsGroupCollapsed(const tab_groups::TabGroupId& group) const;
 
-  // Returns true if the tab at |index| is part of a split view.
-  bool IsTabSplit(int index) const;
-
   // Returns true if the tab at |index| is blocked by a tab modal dialog.
   bool IsTabBlocked(int index) const;
 
@@ -456,8 +460,11 @@ class TabStripModel : public TabGroupController {
   // closed.
   bool IsTabClosable(const content::WebContents* contents) const;
 
-  const split_tabs::SplitTabData* GetSplitData(
-      split_tabs::SplitTabId split_id) const;
+  split_tabs::SplitTabData* GetSplitData(split_tabs::SplitTabId split_id) const;
+
+  bool ContainsSplit(split_tabs::SplitTabId split_id) const;
+
+  std::optional<split_tabs::SplitTabId> GetSplitForTab(int index) const;
 
   // Returns the group that contains the tab at |index|, or nullopt if the tab
   // index is invalid or not grouped.
@@ -553,16 +560,24 @@ class TabStripModel : public TabGroupController {
 
   // Updates the layout for the tabs with `split_id` and notifies observers.
   void UpdateSplitLayout(split_tabs::SplitTabId split_id,
-                         tabs::SplitTabLayout tab_layout);
+                         split_tabs::SplitTabLayout tab_layout);
+
+  // Updates the ratio for the tabs with `split_id` and notifies observers.
+  void UpdateSplitRatio(split_tabs::SplitTabId split_id,
+                        double start_content_ratio);
 
   // Reverses the order of tabs with `split_id`.
   void SwapTabsInSplit(split_tabs::SplitTabId split_id);
+
+  // Replaces the active tab with `split_id` with the tab at `replace_index`.
+  void ReplaceActiveTabInSplit(split_tabs::SplitTabId split_id,
+                               int replace_index);
 
   // Create a new split view with the active tab and add the set of tabs pointed
   // to by |indices| to it. Reorders the tabs so they are contiguous. |indices|
   // must be sorted in ascending order.
   split_tabs::SplitTabId AddToNewSplit(const std::vector<int> indices,
-                                       tabs::SplitTabLayout tab_layout);
+                                       split_tabs::SplitTabLayout tab_layout);
 
   // Create a new tab group and add the set of tabs pointed to be |indices| to
   // it. Pins all of the tabs if any of them were pinned, and reorders the tabs
@@ -947,9 +962,10 @@ class TabStripModel : public TabGroupController {
   std::vector<int> GetSelectedPinnedTabs();
   std::vector<int> GetSelectedUnpinnedTabs();
 
-  split_tabs::SplitTabId AddToSplitImpl(split_tabs::SplitTabId split_id,
-                                        std::vector<int> indices,
-                                        tabs::SplitTabLayout tab_layout);
+  split_tabs::SplitTabId AddToSplitImpl(
+      split_tabs::SplitTabId split_id,
+      std::vector<int> indices,
+      split_tabs::SplitTabVisualData visual_data);
 
   void RemoveSplitImpl(split_tabs::SplitTabId split_id);
 
@@ -1037,6 +1053,15 @@ class TabStripModel : public TabGroupController {
   void UpdateSelectionModelForMoves(const std::vector<int>& tab_indices,
                                     int destination_index);
 
+  // Sets the selected index by taking into account split tabs.
+  void SetSelectedIndex(ui::ListSelectionModel* selection, int index);
+
+  // Returns the range of indices between the anchor and a provided index, that
+  // takes into account split tabs. If the anchor or the tab at index is part of
+  // a split, the range will include that split. The start and end indices are
+  // inclusive.
+  std::pair<int, int> GetRangeFromAnchorTo(int index);
+
   // Generates the MoveNotifications for `MoveTabsToIndexImpl` and updates the
   // selection model and openers.
   std::vector<TabStripModel::MoveNotification> PrepareTabsToMoveToIndex(
@@ -1092,7 +1117,18 @@ class TabStripModel : public TabGroupController {
   std::vector<std::pair<tabs::TabInterface*, int>> GetTabsAndIndicesInSplit(
       split_tabs::SplitTabId split_id);
 
-  bool InsertionIndexBreakSplitContiguity(int index);
+  bool InsertionBreaksSplitContiguity(int index);
+
+  // Helper to determine if moving a block of tabs from `start_index` with block
+  // size `length` to `final_index` breaks contiguity.
+  std::optional<split_tabs::SplitTabId>
+  MoveBreaksSplitContiguity(int start_index, int length, int final_index);
+
+  void MaybeRemoveSplitsForMove(
+      int initial_index,
+      int final_index,
+      const std::optional<tab_groups::TabGroupId> group,
+      bool pin);
 
   // The WebContents data currently hosted within this TabStripModel. This must
   // be kept in sync with |selection_model_|.
@@ -1125,11 +1161,6 @@ class TabStripModel : public TabGroupController {
 
   // Tracks whether a modal UI is showing.
   bool showing_modal_ui_ = false;
-
-  // TODO(crbug.com/392951786): Remove this and use the information from
-  // collections.
-  std::map<split_tabs::SplitTabId, std::unique_ptr<split_tabs::SplitTabData>>
-      split_tab_data_map_;
 
   base::WeakPtrFactory<TabStripModel> weak_factory_{this};
 };

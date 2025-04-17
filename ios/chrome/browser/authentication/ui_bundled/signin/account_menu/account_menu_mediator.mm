@@ -15,7 +15,9 @@
 #import "components/signin/public/base/consent_level.h"
 #import "components/signin/public/identity_manager/objc/identity_manager_observer_bridge.h"
 #import "ios/chrome/browser/authentication/ui_bundled/authentication_flow/authentication_flow.h"
+#import "ios/chrome/browser/authentication/ui_bundled/authentication_flow/authentication_flow_request_helper.h"
 #import "ios/chrome/browser/authentication/ui_bundled/cells/table_view_account_item.h"
+#import "ios/chrome/browser/authentication/ui_bundled/continuation.h"
 #import "ios/chrome/browser/authentication/ui_bundled/enterprise/enterprise_utils.h"
 #import "ios/chrome/browser/authentication/ui_bundled/signin/account_menu/account_menu_consumer.h"
 #import "ios/chrome/browser/authentication/ui_bundled/signin/account_menu/account_menu_data_source.h"
@@ -28,11 +30,13 @@
 #import "ios/chrome/browser/settings/model/sync/utils/identity_error_util.h"
 #import "ios/chrome/browser/settings/ui_bundled/settings_table_view_controller_constants.h"
 #import "ios/chrome/browser/shared/model/application_context/application_context.h"
+#import "ios/chrome/browser/shared/model/prefs/pref_names.h"
 #import "ios/chrome/browser/shared/public/features/features.h"
 #import "ios/chrome/browser/signin/model/authentication_service.h"
 #import "ios/chrome/browser/sync/model/sync_observer_bridge.h"
 
-@interface AccountMenuMediator () <IdentityManagerObserverBridgeDelegate,
+@interface AccountMenuMediator () <AuthenticationFlowRequestHelper,
+                                   IdentityManagerObserverBridgeDelegate,
                                    SyncObserverModelBridge>
 
 // Whether the account menu’s interaction is blocked.
@@ -48,6 +52,8 @@
   std::unique_ptr<signin::IdentityManagerObserverBridge>
       _identityManagerObserver;
   raw_ptr<PrefService> _prefs;
+  // Whether this account menu was triggered from the web.
+  BOOL _fromWeb;
   raw_ptr<syncer::SyncService> _syncService;
   std::unique_ptr<SyncObserverBridge> _syncObserver;
   // The primary identity. During an authentication flow, it contains the
@@ -79,7 +85,8 @@
                   (ChromeAccountManagerService*)accountManagerService
                         authService:(AuthenticationService*)authService
                     identityManager:(signin::IdentityManager*)identityManager
-                              prefs:(PrefService*)prefs {
+                              prefs:(PrefService*)prefs
+                            fromWeb:(BOOL)fromWeb {
   self = [super init];
   if (self) {
     CHECK(syncService);
@@ -96,6 +103,7 @@
         std::make_unique<signin::IdentityManagerObserverBridge>(
             _identityManager, self);
     _prefs = prefs;
+    _fromWeb = fromWeb;
     _primaryIdentityBeforeSignin = _authenticationService->GetPrimaryIdentity(
         signin::ConsentLevel::kSignin);
     _syncService = syncService;
@@ -205,11 +213,11 @@
 }
 
 - (void)onExtendedAccountInfoUpdated:(const AccountInfo&)info {
-  [self handleIdentityUpdated];
+  [self updateIdentitiesIfAllowed];
 }
 
 - (void)onAccountsOnDeviceChanged {
-  [self handleIdentityListChanged];
+  [self updateIdentitiesIfAllowed];
 }
 
 #pragma mark - SyncObserverModelBridge
@@ -247,10 +255,11 @@
   _blockUpdates = YES;
   self.userInteractionsBlocked = YES;
   __weak __typeof(self) weakSelf = self;
-  [self.delegate signOutFromTargetRect:targetRect
-                            completion:^(BOOL success) {
-                              [weakSelf signoutEndedWithSuccess:success];
-                            }];
+  [self.delegate
+      signOutFromTargetRect:targetRect
+                 completion:^(BOOL success, SceneState* scene_state) {
+                   [weakSelf signoutEndedWithSuccess:success];
+                 }];
 }
 
 - (void)accountTappedWithGaiaID:(NSString*)gaiaID
@@ -267,18 +276,14 @@
     }
   }
   CHECK(_identityToSignin);
-
   [self.consumer switchingStarted];
   _blockUpdates = YES;
   self.userInteractionsBlocked = YES;
 
   _authenticationFlow = [self.delegate authenticationFlow:_identityToSignin
                                                anchorRect:targetRect];
-  __weak __typeof(self) weakSelf = self;
-  [_authenticationFlow
-      startSignInWithCompletion:^(SigninCoordinatorResult result) {
-        [weakSelf signinDidEndWithResult:result];
-      }];
+  _authenticationFlow.requestHelper = self;
+  [_authenticationFlow startSignIn];
 }
 
 - (void)didTapErrorButton {
@@ -392,9 +397,20 @@
   }
 }
 
-- (void)signinDidEndWithResult:(SigninCoordinatorResult)result {
-  CHECK(_authenticationFlow);
+#pragma mark - AuthenticationFlowRequestHelper
+
+- (void)authenticationFlowDidSignInInSameProfileWithResult:
+    (SigninCoordinatorResult)result {
+  if (_fromWeb && result == SigninCoordinatorResultSuccess) {
+    GetApplicationContext()->GetLocalState()->SetBoolean(
+        prefs::kHasSwitchedAccountsViaWebFlow, true);
+  }
+  if (!_syncService) {
+    // The mediator was disconnected. No need to update it.
+    return;
+  }
   CHECK(_identityToSignin, base::NotFatalUntil::M140);
+  CHECK(_primaryIdentityBeforeSignin, base::NotFatalUntil::M140);
   _authenticationFlow = nil;
   BOOL success =
       result == SigninCoordinatorResult::SigninCoordinatorResultSuccess;
@@ -421,15 +437,12 @@
   _identityToSignin = nil;
 }
 
+- (ChangeProfileContinuation)authenticationFlowWillChangeProfile {
+  _authenticationFlow = nil;
+  return DoNothingContinuation();
+}
+
 #pragma mark - Private
-
-- (void)handleIdentityListChanged {
-  [self updateIdentitiesIfAllowed];
-}
-
-- (void)handleIdentityUpdated {
-  [self updateIdentitiesIfAllowed];
-}
 
 // Updates the identity list in `_identities`, and sends an notification to
 // the consumer.

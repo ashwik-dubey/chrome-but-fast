@@ -157,13 +157,6 @@ class SearchEnginePreconnectorNoDelaysBrowserTest
          {{"preconnect_interval", "0"}}}};
 
     std::vector<base::test::FeatureRef> disabled_features;
-    if (PreconnectWithPrivacyModeEnabled()) {
-      enabled_features.push_back(
-          {features::kPreconnectToSearchWithPrivacyModeEnabled, {}});
-    } else {
-      disabled_features.emplace_back(
-          features::kPreconnectToSearchWithPrivacyModeEnabled);
-    }
 
     if (PreconnectFromKeyedServiceEnabled()) {
       enabled_features.push_back(
@@ -172,14 +165,20 @@ class SearchEnginePreconnectorNoDelaysBrowserTest
       disabled_features.emplace_back(features::kPreconnectFromKeyedService);
     }
 
+    if (SearchEnginePreconnect2Enabled()) {
+      enabled_features.push_back({net::features::kSearchEnginePreconnect2, {}});
+    } else {
+      disabled_features.emplace_back(net::features::kSearchEnginePreconnect2);
+    }
+
     feature_list_.InitWithFeaturesAndParameters(enabled_features,
                                                 disabled_features);
   }
 
-  bool PreconnectWithPrivacyModeEnabled() const {
+  bool PreconnectFromKeyedServiceEnabled() const override {
     return std::get<0>(GetParam());
   }
-  bool PreconnectFromKeyedServiceEnabled() const override {
+  bool SearchEnginePreconnect2Enabled() const {
     return std::get<1>(GetParam());
   }
 
@@ -228,27 +227,13 @@ IN_PROC_BROWSER_TEST_P(SearchEnginePreconnectorNoDelaysBrowserTest,
 
   // After switching search providers, the test URL should now start being
   // preconnected.
-  if (PreconnectWithPrivacyModeEnabled()) {
-    WaitForPreresolveCountForURL(GetTestURL("/"), 2);
-    // Preconnect should occur for DSE.
-    EXPECT_EQ(2,
-              preresolve_counts_[GetTestURL("/").DeprecatedGetOriginAsURL()]);
+  WaitForPreresolveCountForURL(GetTestURL("/"), 1);
+  // Preconnect should occur for DSE.
+  EXPECT_EQ(1, preresolve_counts_[GetTestURL("/").DeprecatedGetOriginAsURL()]);
 
-    WaitForPreresolveCountForURL(GetTestURL("/"), 4);
-    // Preconnect should occur again for DSE.
-    EXPECT_EQ(4,
-              preresolve_counts_[GetTestURL("/").DeprecatedGetOriginAsURL()]);
-  } else {
-    WaitForPreresolveCountForURL(GetTestURL("/"), 1);
-    // Preconnect should occur for DSE.
-    EXPECT_EQ(1,
-              preresolve_counts_[GetTestURL("/").DeprecatedGetOriginAsURL()]);
-
-    WaitForPreresolveCountForURL(GetTestURL("/"), 2);
-    // Preconnect should occur again for DSE.
-    EXPECT_EQ(2,
-              preresolve_counts_[GetTestURL("/").DeprecatedGetOriginAsURL()]);
-  }
+  WaitForPreresolveCountForURL(GetTestURL("/"), 2);
+  // Preconnect should occur again for DSE.
+  EXPECT_EQ(2, preresolve_counts_[GetTestURL("/").DeprecatedGetOriginAsURL()]);
 }
 
 IN_PROC_BROWSER_TEST_P(SearchEnginePreconnectorNoDelaysBrowserTest,
@@ -289,17 +274,10 @@ IN_PROC_BROWSER_TEST_P(SearchEnginePreconnectorNoDelaysBrowserTest,
   GetSearchEnginePreconnector()->StartPreconnecting(
       /*with_startup_delay=*/false);
   const GURL search_url = template_url->GenerateSearchURL({});
-  if (PreconnectWithPrivacyModeEnabled()) {
-    WaitForPreresolveCountForURL(search_url, 2);
+  WaitForPreresolveCountForURL(search_url, 1);
 
-    // Preconnect should occur for fake search (2 since there are 2 NAKs).
-    EXPECT_EQ(2, preresolve_counts_[search_url]);
-  } else {
-    WaitForPreresolveCountForURL(search_url, 1);
-
-    // Preconnect should occur for fake search.
-    EXPECT_EQ(1, preresolve_counts_[search_url]);
-  }
+  // Preconnect should occur for fake search.
+  EXPECT_EQ(1, preresolve_counts_[search_url]);
 
   // No preconnects should have been issued for the test URL.
   EXPECT_EQ(0, preresolve_counts_[GetTestURL("/").DeprecatedGetOriginAsURL()]);
@@ -322,19 +300,19 @@ class SearchEnginePreconnectorForegroundBrowserTest
                                     {{"startup_delay_ms", "1000000"},
                                      {"skip_in_background", "false"}}});
       }
-      if (preconnect_to_search_with_privacy_mode_enabled()) {
-        enabled_features.push_back(
-            {features::kPreconnectToSearchWithPrivacyModeEnabled, {}});
-      } else {
-        disabled_features.emplace_back(
-            features::kPreconnectToSearchWithPrivacyModeEnabled);
-      }
 
       if (PreconnectFromKeyedServiceEnabled()) {
         enabled_features.push_back(
             {features::kPreconnectFromKeyedService, {{"run_on_otr", "false"}}});
       } else {
         disabled_features.emplace_back(features::kPreconnectFromKeyedService);
+      }
+
+      if (SearchEnginePreconnect2Enabled()) {
+        enabled_features.push_back(
+            {net::features::kSearchEnginePreconnect2, {}});
+      } else {
+        disabled_features.emplace_back(net::features::kSearchEnginePreconnect2);
       }
       feature_list_.InitWithFeaturesAndParameters(enabled_features,
                                                   disabled_features);
@@ -345,11 +323,11 @@ class SearchEnginePreconnectorForegroundBrowserTest
 
   bool load_page() const { return std::get<1>(GetParam()); }
 
-  bool preconnect_to_search_with_privacy_mode_enabled() const {
+  bool PreconnectFromKeyedServiceEnabled() const override {
     return std::get<2>(GetParam());
   }
 
-  bool PreconnectFromKeyedServiceEnabled() const override {
+  bool SearchEnginePreconnect2Enabled() const {
     return std::get<3>(GetParam());
   }
 
@@ -417,29 +395,22 @@ IN_PROC_BROWSER_TEST_P(SearchEnginePreconnectorForegroundBrowserTest,
                                              GetTestURL(kSearchURLWithQuery)));
   }
 
-  // Put the fake search URL to be preconnected in foreground.
-  GetSearchEnginePreconnector()->StartPreconnecting(
-      /*with_startup_delay=*/false);
-
-  if (preconnect_to_search_with_privacy_mode_enabled()) {
-    if (!skip_in_background() || load_page()) {
-      WaitForPreresolveCountForURL(fake_search_url, 2);
-    }
-
-    // If preconnects are skipped in background and no web contents is in
-    // foreground, then no preconnect should happen.
-    EXPECT_EQ(skip_in_background() && !load_page() ? 0 : 2,
-              preresolve_counts_[fake_search_url]);
-  } else {
-    if (!skip_in_background() || load_page()) {
-      WaitForPreresolveCountForURL(fake_search_url, 1);
-    }
-
-    // If preconnects are skipped in background and no web contents is in
-    // foreground, then no preconnect should happen.
-    EXPECT_EQ(skip_in_background() && !load_page() ? 0 : 1,
-              preresolve_counts_[fake_search_url]);
+  // Skip enabling the preconnect as it is already handled in the KeyedService
+  // for the `SearchEnginePreconnect2` feature.
+  if (!SearchEnginePreconnect2Enabled() || !load_page()) {
+    // Put the fake search URL to be preconnected in foreground.
+    GetSearchEnginePreconnector()->StartPreconnecting(
+        /*with_startup_delay=*/false);
   }
+
+  if (!skip_in_background() || load_page()) {
+    WaitForPreresolveCountForURL(fake_search_url, 1);
+  }
+
+  // If preconnects are skipped in background and no web contents is in
+  // foreground, then no preconnect should happen.
+  EXPECT_EQ(skip_in_background() && !load_page() ? 0 : 1,
+            preresolve_counts_[fake_search_url]);
   histogram_tester.ExpectUniqueSample(
       "NavigationPredictor.SearchEnginePreconnector."
       "IsBrowserAppLikelyInForeground",
@@ -546,14 +517,6 @@ class SearchEnginePreconnectorEnabledOnlyBrowserTest
            {{"preconnect_interval", "60"}}}};
 
       std::vector<base::test::FeatureRef> disabled_features;
-      if (PreconnectWithPrivacyModeEnabled()) {
-        enabled_features.push_back(
-            {features::kPreconnectToSearchWithPrivacyModeEnabled, {}});
-      } else {
-        disabled_features.emplace_back(
-            features::kPreconnectToSearchWithPrivacyModeEnabled);
-      }
-
       if (PreconnectFromKeyedServiceEnabled()) {
         enabled_features.push_back(
             {features::kPreconnectFromKeyedService, {{"run_on_otr", "false"}}});
@@ -561,15 +524,22 @@ class SearchEnginePreconnectorEnabledOnlyBrowserTest
         disabled_features.emplace_back(features::kPreconnectFromKeyedService);
       }
 
+      if (SearchEnginePreconnect2Enabled()) {
+        enabled_features.push_back(
+            {net::features::kSearchEnginePreconnect2, {}});
+      } else {
+        disabled_features.emplace_back(net::features::kSearchEnginePreconnect2);
+      }
+
       feature_list_.InitWithFeaturesAndParameters(enabled_features,
                                                   disabled_features);
     }
   }
 
-  bool PreconnectWithPrivacyModeEnabled() const {
+  bool PreconnectFromKeyedServiceEnabled() const override {
     return std::get<0>(GetParam());
   }
-  bool PreconnectFromKeyedServiceEnabled() const override {
+  bool SearchEnginePreconnect2Enabled() const {
     return std::get<1>(GetParam());
   }
 
@@ -619,17 +589,10 @@ IN_PROC_BROWSER_TEST_P(SearchEnginePreconnectorEnabledOnlyBrowserTest,
       /*with_startup_delay=*/false);
 
   const GURL search_url = template_url->GenerateSearchURL({});
-  if (PreconnectWithPrivacyModeEnabled()) {
-    WaitForPreresolveCountForURL(search_url, 2);
+  WaitForPreresolveCountForURL(search_url, 1);
 
-    // Preconnect should occur for Google search (2 since there are 2 NAKs).
-    EXPECT_EQ(2, preresolve_counts_[search_url]);
-  } else {
-    WaitForPreresolveCountForURL(search_url, 1);
-
-    // Preconnect should occur for Google search.
-    EXPECT_EQ(1, preresolve_counts_[search_url]);
-  }
+  // Preconnect should occur for Google search.
+  EXPECT_EQ(1, preresolve_counts_[search_url]);
 
   // No preconnects should have been issued for the test URL.
   EXPECT_EQ(0, preresolve_counts_[GetTestURL("/").DeprecatedGetOriginAsURL()]);

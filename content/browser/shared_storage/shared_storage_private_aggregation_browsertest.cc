@@ -2384,6 +2384,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiFilteringIds));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -2457,6 +2462,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiFilteringIds));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -2533,6 +2543,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiFilteringIds));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -2610,6 +2625,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiFilteringIds));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -2693,6 +2713,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiFilteringIds));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -2796,6 +2821,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiFilteringIds));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -2887,6 +2917,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiFilteringIds));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -2961,6 +2996,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiFilteringIds));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -3036,6 +3076,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiFilteringIds));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -3107,6 +3152,11 @@ IN_PROC_BROWSER_TEST_F(
       LogWebFeatureForCurrentPage(
           shell()->web_contents()->GetPrimaryMainFrame(),
           blink::mojom::WebFeature::kPrivateAggregationApiSharedStorage));
+  EXPECT_CALL(
+      browser_client(),
+      LogWebFeatureForCurrentPage(
+          shell()->web_contents()->GetPrimaryMainFrame(),
+          blink::mojom::WebFeature::kPrivateAggregationApiErrorReporting));
   ON_CALL(browser_client(), IsPrivateAggregationAllowed)
       .WillByDefault(testing::Return(true));
   ON_CALL(browser_client(), IsSharedStorageAllowed)
@@ -3346,6 +3396,8 @@ IN_PROC_BROWSER_TEST_F(SharedStoragePrivateAggregationEnabledBrowserTest,
 
   run_loop.Run();
 
+  ASSERT_EQ(urn_uuids_observed().size(), 1u);
+
   ExpectAccessObserved(
       {{AccessScope::kWindow, AccessMethod::kAddModule, MainFrameId(),
         a_test_origin_.Serialize(),
@@ -3366,7 +3418,7 @@ IN_PROC_BROWSER_TEST_F(SharedStoragePrivateAggregationEnabledBrowserTest,
                 {{https_server()->GetURL(host, "/fenced_frames/title0.html"),
                   {}}}),
             /*resolve_to_config=*/true,
-            /*saved_query=*/std::string(),
+            /*saved_query=*/std::string(), urn_uuids_observed()[0],
             /*worklet_id=*/0)}});
 }
 

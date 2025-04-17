@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_UI_AUTOFILL_IMAGE_FETCHER_BASE_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_UI_AUTOFILL_IMAGE_FETCHER_BASE_H_
 
-#include <vector>
 #include "base/containers/span.h"
 #include "base/functional/callback.h"
 #if BUILDFLAG(IS_ANDROID)
@@ -14,9 +13,11 @@
 
 class GURL;
 
-namespace autofill {
+namespace gfx {
+class Image;
+}  // namespace gfx
 
-struct AutofillImage;
+namespace autofill {
 
 // Abstract class that enables pre-fetching of images from server on browser
 // start-up used by various Autofill features.
@@ -45,25 +46,30 @@ class AutofillImageFetcherBase {
     kLarge = 1,
     kSquare = 2,
   };
+
+  virtual ~AutofillImageFetcherBase() = default;
+
   //  TODO (crbug.com/1478931): The implementation classes should own the
   //  fetched images, and define the callback to handle the images.
   //
   // Once invoked, the image fetcher starts fetching images asynchronously based
-  // on the urls. `image_urls` is a span of urls that needs to be downloaded.
-  // `image_sizes` is the different sizes in which each image_url should be
-  // downloaded. `callback` will be invoked when all the requests have been
-  // completed. The callback will receive a vector of AutofillImage, for (only)
-  // those cards for which the AutofillImageFetcher could successfully fetch the
-  // image.
-  virtual void FetchImagesForURLs(
+  // on the urls. `image_urls` is a span of urls that needs to be downloaded. If
+  // an image has already been fetched, it won't be fetched again. `image_sizes`
+  // is the different sizes in which each image_url should be downloaded.
+  virtual void FetchCreditCardArtImagesForURLs(
       base::span<const GURL> image_urls,
-      base::span<const ImageSize> image_sizes,
-      base::OnceCallback<void(
-          const std::vector<std::unique_ptr<AutofillImage>>&)> callback) = 0;
+      base::span<const ImageSize> image_sizes) = 0;
 
   // Fetches images for the `image_urls`, treats them according to Pix image
   // specifications, and caches them in memory.
-  virtual void FetchPixAccountImages(base::span<const GURL> image_urls) = 0;
+  virtual void FetchPixAccountImagesForURLs(
+      base::span<const GURL> image_urls) = 0;
+
+  // Returns the cached image for the `image_url` if it was fetched locally to
+  // the client. If the image is not present in the cache, this function will
+  // return a `nullptr`.
+  virtual const gfx::Image* GetCachedImageForUrl(
+      const GURL& image_url) const = 0;
 
 #if BUILDFLAG(IS_ANDROID)
   // Return the owned AutofillImageFetcher Java object. It is created if it

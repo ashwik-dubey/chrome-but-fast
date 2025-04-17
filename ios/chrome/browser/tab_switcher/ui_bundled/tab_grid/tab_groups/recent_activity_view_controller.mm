@@ -5,15 +5,18 @@
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups/recent_activity_view_controller.h"
 
 #import "base/check.h"
+#import "ios/chrome/browser/net/model/crurl.h"
 #import "ios/chrome/browser/share_kit/model/share_kit_avatar_primitive.h"
 #import "ios/chrome/browser/shared/ui/symbols/symbols.h"
 #import "ios/chrome/browser/shared/ui/table_view/cells/table_view_text_item.h"
+#import "ios/chrome/browser/shared/ui/table_view/table_view_favicon_data_source.h"
 #import "ios/chrome/browser/shared/ui/table_view/table_view_utils.h"
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups/recent_activity_log_cell.h"
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups/recent_activity_log_item.h"
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups/recent_activity_mutator.h"
 #import "ios/chrome/browser/tab_switcher/ui_bundled/tab_grid/tab_groups/tab_groups_constants.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
+#import "ios/chrome/common/ui/favicon/favicon_view.h"
 #import "ios/chrome/grit/ios_strings.h"
 #import "ui/base/l10n/l10n_util_mac.h"
 
@@ -29,6 +32,13 @@ typedef UITableViewDiffableDataSource<NSString*, RecentActivityLogItem*>
 
 NSString* const kRecentActivitySectionIdentifier =
     @"RecentActivitySectionIdentifier";
+
+// Returns the accessibility identifier to set on a RecentActivityLogCell when
+// positioned at the given index.
+NSString* RecentActivityLogCellAccessibilityIdentifier(NSUInteger index) {
+  return [NSString
+      stringWithFormat:@"%@%ld", kRecentActivityLogCellIdentifierPrefix, index];
+}
 
 }  // namespace
 
@@ -163,20 +173,28 @@ NSString* const kRecentActivitySectionIdentifier =
   RecentActivityLogCell* cell =
       DequeueTableViewCell<RecentActivityLogCell>(tableView);
   cell.titleLabel.text = itemIdentifier.title;
-  cell.descriptionLabel.text = itemIdentifier.actionDescription;
-  cell.faviconImageView.image = itemIdentifier.favicon;
+  NSString* descriptionString =
+      [NSString stringWithFormat:@"%@ • %@", itemIdentifier.actionDescription,
+                                 itemIdentifier.elapsedTime];
+  cell.descriptionLabel.text = descriptionString;
+  cell.accessibilityIdentifier =
+      RecentActivityLogCellAccessibilityIdentifier(indexPath.item);
+  [cell.faviconView configureWithAttributes:itemIdentifier.attributes];
 
-  if (itemIdentifier.avatarPrimitive) {
-    UIView* view = [itemIdentifier.avatarPrimitive view];
-    [cell.avatarView addSubview:view];
-    [NSLayoutConstraint activateConstraints:@[
-      [view.centerXAnchor
-          constraintEqualToAnchor:cell.avatarView.centerXAnchor],
-      [view.centerYAnchor
-          constraintEqualToAnchor:cell.avatarView.centerYAnchor],
-    ]];
-    [itemIdentifier.avatarPrimitive resolve];
-  }
+  NSString* uniqueIdentifier = cell.uniqueIdentifier;
+  CrURL* crurl = [[CrURL alloc] initWithGURL:itemIdentifier.faviconURL];
+  [_faviconDataSource
+      faviconForPageURL:crurl
+             completion:^(FaviconAttributes* attributes) {
+               CHECK(attributes);
+               // Only set favicon if the cell hasn't been reused.
+               if ([cell.uniqueIdentifier isEqualToString:uniqueIdentifier]) {
+                 [cell.faviconView configureWithAttributes:attributes];
+               }
+             }];
+
+  [cell setAvatar:[itemIdentifier.avatarPrimitive view]];
+  [itemIdentifier.avatarPrimitive resolve];
   return cell;
 }
 

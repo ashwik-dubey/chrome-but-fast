@@ -299,6 +299,10 @@ void ToolbarView::Init() {
     initialized_ = true;
     return;
   } else if (display_mode_ == DisplayMode::LOCATION) {
+    // Add the pinned toolbar actions container so that downloads can be shown
+    // in popups.
+    pinned_toolbar_actions_container_ = container_view_->AddChildView(
+        std::make_unique<PinnedToolbarActionsContainer>(browser_view_));
     container_view_->SetBackground(
         views::CreateSolidBackground(kColorLocationBarBackground));
     container_view_->SetLayoutManager(std::make_unique<views::FlexLayout>())
@@ -640,8 +644,10 @@ void ToolbarView::ShowIntentPickerBubble(
   if (bubble_type == IntentPickerBubbleView::BubbleType::kClickToCall) {
     highlighted_button =
         GetPageActionIconView(PageActionIconType::kClickToCall);
+  } else if (IsPageActionMigrated(PageActionIconType::kIntentPicker)) {
+    highlighted_button = GetPageActionView(kActionShowIntentPicker);
   } else if (apps::features::ShouldShowLinkCapturingUX()) {
-    highlighted_button = GetIntentChip();
+    highlighted_button = GetIntentChipButton();
   } else {
     highlighted_button =
         GetPageActionIconView(PageActionIconType::kIntentPicker);
@@ -1070,7 +1076,13 @@ PinnedToolbarActionsContainer* ToolbarView::GetPinnedToolbarActionsContainer() {
 }
 
 gfx::Size ToolbarView::GetToolbarButtonSize() const {
-  const int size = GetLayoutConstant(LayoutConstant::TOOLBAR_BUTTON_HEIGHT);
+  // Since DisplayMode::LOCATION is for a slimline toolbar showing only compact
+  // location bar used for popups, toolbar buttons (ie downloads) must be
+  // smaller to accommodate the smaller size.
+  const int size =
+      display_mode_ == DisplayMode::LOCATION
+          ? location_bar_->GetPreferredSize().height()
+          : GetLayoutConstant(LayoutConstant::TOOLBAR_BUTTON_HEIGHT);
   return gfx::Size(size, size);
 }
 
@@ -1158,13 +1170,6 @@ ToolbarButton* ToolbarView::GetBackButton() {
 
 ReloadButton* ToolbarView::GetReloadButton() {
   return reload_;
-}
-
-views::Button* ToolbarView::GetIntentChip() {
-  if (IsPageActionMigrated(PageActionIconType::kIntentPicker)) {
-    return GetPageActionView(kActionShowIntentPicker);
-  }
-  return GetIntentChipButton();
 }
 
 IntentChipButton* ToolbarView::GetIntentChipButton() {

@@ -21,10 +21,15 @@
 
 class GURL;
 class OptimizationGuideKeyedService;
+class PrefService;
 
 namespace content {
 class WebContents;
 }  // namespace content
+
+namespace predictors {
+class LoadingPredictor;
+}  // namespace predictors
 
 namespace tabs {
 enum class GlicNudgeActivity;
@@ -36,10 +41,12 @@ class ContextualCueingService
     : public KeyedService,
       page_content_annotations::PageContentExtractionService::Observer {
  public:
-  explicit ContextualCueingService(
+  ContextualCueingService(
       page_content_annotations::PageContentExtractionService*
           page_content_extraction_service,
-      OptimizationGuideKeyedService* optimization_guide_keyed_service);
+      OptimizationGuideKeyedService* optimization_guide_keyed_service,
+      predictors::LoadingPredictor* loading_predictor,
+      PrefService* pref_service);
   ~ContextualCueingService() override;
 
   // Reports a page load happened to `url`, and is used to keep track of quiet
@@ -68,10 +75,18 @@ class ContextualCueingService
     return weak_ptr_factory_.GetWeakPtr();
   }
 
-  // Returns zero state suggestions for GLIC.
-  void GetContextualGlicZeroStateSuggestions(content::WebContents* web_contents,
-                                             bool is_fre,
-                                             GlicSuggestionsCallback callback);
+  // Informs `this` to prepare fetching for zero state suggestions for GLIC.
+  // Note that this *will not* actually do the fetch and it is intended for the
+  // caller to call `GetContextualGlicZeroStateSuggestions` to actually fetch
+  // the suggestions.
+  void PrepareToFetchContextualGlicZeroStateSuggestions(
+      content::WebContents* web_contents);
+
+  // Returns zero state suggestions for GLIC. Virtual for testing.
+  virtual void GetContextualGlicZeroStateSuggestions(
+      content::WebContents* web_contents,
+      bool is_fre,
+      GlicSuggestionsCallback callback);
 
  private:
   // page_content_annotations::PageContentExtractionService::Observer:
@@ -113,6 +128,13 @@ class ContextualCueingService
 
   raw_ptr<OptimizationGuideKeyedService> optimization_guide_keyed_service_ =
       nullptr;
+
+  raw_ptr<predictors::LoadingPredictor> loading_predictor_ = nullptr;
+
+  raw_ptr<PrefService> pref_service_ = nullptr;
+
+  // Stores model execution url to save look up time.
+  GURL mes_url_;
 
   base::WeakPtrFactory<ContextualCueingService> weak_ptr_factory_{this};
 };
